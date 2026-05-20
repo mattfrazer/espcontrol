@@ -68,11 +68,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          sparse-checkout: src/webserver/devices.json
+          sparse-checkout: devices/manifest.json
           sparse-checkout-cone-mode: false
 
       - name: Set device slugs
-        run: echo "DEVICE_SLUGS=$(jq -r 'keys | join(" ")' src/webserver/devices.json)" >> $GITHUB_ENV
+        run: |
+          DEVICE_SLUGS=$(jq -r '.devices | keys | join(" ")' devices/manifest.json)
+          echo "DEVICE_SLUGS=${DEVICE_SLUGS}" >> "$GITHUB_ENV"
 
       - name: Download firmware from latest release
         env:
@@ -158,6 +160,7 @@ jobs:
 
       - name: Download firmware artifact
         uses: actions/download-artifact@v8
+        continue-on-error: true
         with:
           name: firmware
           path: dist/firmware
