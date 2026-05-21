@@ -1156,6 +1156,8 @@ inline void alarm_control_open_modal(AlarmCardCtx *ctx) {
   lv_coord_t rail_w = layout.panel_w * 58 / 100;
   if (rail_w < control_modal_scaled_px(156, layout.short_side))
     rail_w = control_modal_scaled_px(156, layout.short_side);
+  lv_coord_t max_rail_w = layout.short_side * 62 / 100;
+  if (rail_w > max_rail_w) rail_w = max_rail_w;
   if (rail_w > layout.panel_w - layout.inset * 2) rail_w = layout.panel_w - layout.inset * 2;
   lv_coord_t rail_h = layout.panel_h - layout.inset * 2;
   if (rail_h < control_modal_scaled_px(300, layout.short_side))
