@@ -9,7 +9,7 @@ const { loadBundledWebSource } = require("./web_source");
 
 const ROOT = path.resolve(__dirname, "..");
 const SOURCE = path.join(ROOT, "src", "webserver", "www.js");
-const GOLDEN_CONFIG = path.join(ROOT, "scripts", "fixtures", "config_golden.json");
+const COMPAT_FIXTURES = path.join(ROOT, "compatibility", "fixtures", "product_compatibility.json");
 
 function loadHooks() {
   const sandbox = {
@@ -58,7 +58,8 @@ function throwsBackupMessage(fn, expected) {
 }
 
 const hooks = loadHooks();
-const golden = JSON.parse(fs.readFileSync(GOLDEN_CONFIG, "utf8"));
+const fixtures = JSON.parse(fs.readFileSync(COMPAT_FIXTURES, "utf8"));
+const legacyV1 = fixtures["legacy-v1"];
 assert(hooks, "web config helpers were not exported");
 
 const v2 = hooks.createBackupConfig({
@@ -136,11 +137,11 @@ assert.strictEqual(sameDevicePlan.button_order, "1,2d", "same-device import keep
 assert.deepStrictEqual(buttonShape(sameDevicePlan.buttons[1]), buttonShape(v2.buttons[1]), "same-device import keeps migrated button");
 assert(sameDevicePlan.subpages["1"], "same-device import keeps subpages");
 
-const crossDevicePlan = hooks.planBackupImport(golden.backup, { device: "small-panel", slots: 2 });
+const crossDevicePlan = hooks.planBackupImport(legacyV1.backup, { device: "small-panel", slots: 2 });
 
-assert.strictEqual(crossDevicePlan.importedCount, 4, "cross-device import records source slot count");
-assert(crossDevicePlan.warnings.some((msg) => msg.includes("different panel")), "cross-device import warns on device mismatch");
-assert(crossDevicePlan.warnings.some((msg) => msg.includes("4 slots")), "cross-device import warns on slot adaptation");
+assert.strictEqual(crossDevicePlan.importedCount, 4, "legacy-v1 backup cross-device import records source slot count");
+assert(crossDevicePlan.warnings.some((msg) => msg.includes("different panel")), "legacy-v1 backup cross-device import warns on device mismatch");
+assert(crossDevicePlan.warnings.some((msg) => msg.includes("4 slots")), "legacy-v1 backup cross-device import warns on slot adaptation");
 assert.deepStrictEqual(buttonShape(crossDevicePlan.buttons[0]), buttonShape({
   entity: "weather.home",
   label: "",
@@ -148,14 +149,14 @@ assert.deepStrictEqual(buttonShape(crossDevicePlan.buttons[0]), buttonShape({
   icon_on: "Auto",
   type: "weather",
   precision: "tomorrow",
-}), "cross-device import preserves first used old slot");
+}), "legacy-v1 backup cross-device import preserves first used old slot");
 assert.deepStrictEqual(buttonShape(crossDevicePlan.buttons[1]), buttonShape({
   entity: "light.kitchen",
   label: "Kitchen",
   icon: "Auto",
   icon_on: "Lightbulb",
-}), "cross-device import fills remaining target slots in order");
-assert(crossDevicePlan.subpages["1"], "cross-device import remaps subpages to the new slot");
+}), "legacy-v1 backup cross-device import fills remaining target slots in order");
+assert(crossDevicePlan.subpages["1"], "legacy-v1 backup cross-device import remaps subpages to the new slot");
 
 throwsBackupMessage(
   () => hooks.normalizeBackupConfig({ version: 999, buttons: [] }),

@@ -9,7 +9,7 @@ const { loadBundledWebSource } = require("./web_source");
 
 const ROOT = path.resolve(__dirname, "..");
 const SOURCE = path.join(ROOT, "src", "webserver", "www.js");
-const GOLDEN_CONFIG = path.join(ROOT, "scripts", "fixtures", "config_golden.json");
+const COMPAT_FIXTURES = path.join(ROOT, "compatibility", "fixtures", "product_compatibility.json");
 
 function loadHooks(search) {
   const sandbox = {
@@ -196,22 +196,24 @@ function assertSubpageMigration(hooks, name, encoded, expected) {
 }
 
 const hooks = loadHooks();
-const golden = JSON.parse(fs.readFileSync(GOLDEN_CONFIG, "utf8"));
+const fixtures = JSON.parse(fs.readFileSync(COMPAT_FIXTURES, "utf8"));
+const current = fixtures.current;
+const legacyV1 = fixtures["legacy-v1"];
 assert(hooks, "web config helpers were not exported");
 assert.deepStrictEqual(
   Array.from(hooks.CARD_CONFIG_FIELDS),
-  golden.generatedContract.fields,
+  current.generatedContract.fields,
   "generated card contract preserves saved field order"
 );
 assert.strictEqual(
   hooks.cardContractSubpageTypeCode("climate"),
-  golden.generatedContract.subpageTypeCodes.climate,
+  current.generatedContract.subpageTypeCodes.climate,
   "generated contract exposes compact type codes"
 );
 assert.strictEqual(hooks.cardContractSubpageTypeFromCode("H"), "climate", "generated contract exposes compact type decode");
 assert.strictEqual(hooks.cardContractLargeNumbersSupported("sensor", "text"), false, "generated contract blocks text sensor large numbers");
 assert.strictEqual(hooks.cardContractLargeNumbersSupported("weather", "tomorrow"), true, "generated contract allows weather forecast large numbers");
-golden.generatedContract.requiredCards.forEach((type) => {
+current.generatedContract.requiredCards.forEach((type) => {
   assert(hooks.cardContractCardKeys().includes(type), `generated contract exposes ${type || "switch"} card identity`);
 });
 assert.strictEqual(hooks.cardContractCardLabel("media"), "Media", "generated contract exposes card labels");
@@ -454,7 +456,7 @@ assert.deepStrictEqual(Object.assign({}, hooks.cardContractMigrationAlias("text_
   type: "sensor",
   precision: "text",
 }, "generated contract exposes legacy text sensor migration alias");
-Object.entries(golden.generatedContract.migrationAliases).forEach(([alias, expected]) => {
+Object.entries(current.generatedContract.migrationAliases).forEach(([alias, expected]) => {
   assert.deepStrictEqual(
     Object.assign({}, hooks.cardContractMigrationAlias(alias)),
     expected,
@@ -513,50 +515,50 @@ assert.strictEqual(hooks.screensaverTimeoutSupportedFor(10, false, 60, 3600), tr
 assert.strictEqual(hooks.screensaverTimeoutSupportedFor(10, true, 60, 3600), false, "short timeout blocked after old limits load");
 assert.strictEqual(hooks.screensaverTimeoutSupportedFor(10, true, 10, 3600), true, "short timeout allowed after new limits load");
 
-Object.entries(golden.buttons).forEach(([name, button]) => {
-  assertButtonRoundTrip(hooks, `golden ${name}`, button, false);
+Object.entries(current.buttons).forEach(([name, button]) => {
+  assertButtonRoundTrip(hooks, `current ${name}`, button, false);
 });
-Object.entries(golden.oldButtonStrings).forEach(([name, value]) => {
+Object.entries(legacyV1.oldButtonStrings).forEach(([name, value]) => {
   if (value.needsMigration === false) {
     assert.deepStrictEqual(
       buttonShape(hooks.parseButtonConfig(value.input)),
       buttonShape(value.expected),
-      `golden old button ${name} parses`
+      `legacy-v1 old button ${name} parses`
     );
   } else {
-    assertButtonMigration(hooks, `golden old button ${name}`, value.input, value.expected);
+    assertButtonMigration(hooks, `legacy-v1 old button ${name}`, value.input, value.expected);
   }
 });
-assertSubpageRoundTrip(hooks, "golden subpage", golden.subpage, true);
-Object.entries(golden.compactSubpageStrings).forEach(([name, value]) => {
-  assertSubpageRoundTrip(hooks, `golden compact subpage ${name}`, value.expected, true);
+assertSubpageRoundTrip(hooks, "current subpage", current.subpage, true);
+Object.entries(current.compactSubpageStrings).forEach(([name, value]) => {
+  assertSubpageRoundTrip(hooks, `current compact subpage ${name}`, value.expected, true);
   assert.deepStrictEqual(
     subpageShape(hooks.parseSubpageConfig(value.input)),
     subpageShape(value.expected),
-    `golden compact subpage ${name} parses`
+    `current compact subpage ${name} parses`
   );
 });
-const goldenLayout = hooks.importedButtonOrderFor(golden.layoutImport.order, {});
+const currentLayout = hooks.importedButtonOrderFor(current.layoutImport.order, {});
 assert.deepStrictEqual(
-  Array.from(goldenLayout.grid.slice(0, golden.layoutImport.expectedGridPrefix.length)),
-  golden.layoutImport.expectedGridPrefix,
-  "golden cross-device layout import grid"
+  Array.from(currentLayout.grid.slice(0, current.layoutImport.expectedGridPrefix.length)),
+  current.layoutImport.expectedGridPrefix,
+  "current cross-device layout import grid"
 );
 assert.deepStrictEqual(
-  Object.assign({}, goldenLayout.sizes),
-  golden.layoutImport.expectedSizes,
-  "golden cross-device layout import sizes"
+  Object.assign({}, currentLayout.sizes),
+  current.layoutImport.expectedSizes,
+  "current cross-device layout import sizes"
 );
-const goldenBackupPlan = hooks.planBackupImport(golden.backup, { device: "small-panel", slots: 2 });
-assert(goldenBackupPlan.warnings.some((msg) => msg.includes("different panel")), "golden backup warns on device mismatch");
-assert.deepStrictEqual(buttonShape(goldenBackupPlan.buttons[0]), buttonShape({
+const legacyV1BackupPlan = hooks.planBackupImport(legacyV1.backup, { device: "small-panel", slots: 2 });
+assert(legacyV1BackupPlan.warnings.some((msg) => msg.includes("different panel")), "legacy-v1 backup warns on device mismatch");
+assert.deepStrictEqual(buttonShape(legacyV1BackupPlan.buttons[0]), buttonShape({
   entity: "weather.home",
   label: "",
   icon: "Auto",
   icon_on: "Auto",
   type: "weather",
   precision: "tomorrow",
-}), "golden backup migrates weather forecast card");
+}), "legacy-v1 backup migrates weather forecast card");
 
 assertButtonRoundTrip(hooks, "normal button", {
   entity: "light.kitchen",
@@ -2271,4 +2273,4 @@ const largeSubpage = {
 const largeEncoded = assertSubpageRoundTrip(hooks, "oversized subpage", largeSubpage, false);
 assert(largeEncoded.length > 255, "oversized subpage should exceed one ESPHome text value");
 
-console.log("Config format golden tests passed.");
+console.log("Config format current tests passed.");
