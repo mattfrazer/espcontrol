@@ -68,6 +68,10 @@ inline bool card_runtime_cover_command_mode(const std::string &mode) {
          mode != "" && mode != "toggle" && mode != "tilt";
 }
 
+inline const char *card_runtime_cover_command_service(const std::string &mode) {
+  return card_contract_cover_command_service(mode);
+}
+
 inline bool card_runtime_garage_mode_valid(const std::string &mode) {
   return card_contract_garage_mode_valid(mode);
 }
@@ -90,6 +94,14 @@ inline bool card_runtime_lock_command_mode(const std::string &mode) {
   return card_runtime_lock_mode_valid(mode) && !mode.empty();
 }
 
+inline const char *card_runtime_lock_command_service(const std::string &mode) {
+  return card_contract_lock_command_service(mode);
+}
+
+inline const char *card_runtime_lock_toggle_service(const std::string &state) {
+  return card_contract_lock_toggle_service(state);
+}
+
 inline bool card_runtime_internal_push_mode(const std::string &mode) {
   return mode == "push" && card_contract_internal_mode_valid(mode);
 }
@@ -105,6 +117,10 @@ inline bool card_runtime_media_playback_button_mode(const std::string &mode) {
   return normalized == "play_pause" || normalized == "previous" || normalized == "next";
 }
 
+inline const char *card_runtime_media_playback_service(const std::string &mode) {
+  return card_contract_media_playback_service(card_runtime_media_mode(mode));
+}
+
 inline bool card_runtime_media_state_display_mode(const std::string &mode) {
   return card_contract_media_state_display_mode(card_runtime_media_mode(mode));
 }
@@ -116,6 +132,10 @@ inline bool card_runtime_media_now_playing_control(const std::string &precision)
 
 inline bool card_runtime_alarm_action_mode_valid(const std::string &mode) {
   return card_contract_alarm_action_mode_valid(mode);
+}
+
+inline const char *card_runtime_alarm_action_service(const std::string &mode) {
+  return card_contract_alarm_action_service(mode);
 }
 
 inline const char *card_runtime_alarm_action_icon_name(const std::string &mode) {
