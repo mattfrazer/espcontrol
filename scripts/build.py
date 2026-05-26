@@ -21,6 +21,7 @@ import urllib.request
 from pathlib import Path
 
 from device_profiles import load_device_profiles, public_device_capabilities, web_config
+from product_schema import ProductSchemaError, assert_card_contract_valid
 
 ROOT = Path(__file__).resolve().parent.parent
 MDI_VERSION = "7.4.47"
@@ -221,177 +222,6 @@ def sync_entity_names(check_only=False):
 # ===========================================================================
 # Card config contract generation
 # ===========================================================================
-
-def validate_card_contract(data):
-    errors = []
-    fields = data.get("fields")
-    expected_fields = ["entity", "label", "icon", "icon_on", "sensor", "unit", "type", "precision", "options"]
-    if fields != expected_fields:
-        errors.append("fields must match the saved button config field order")
-
-    cards = data.get("cards")
-    if not isinstance(cards, dict) or not cards:
-        errors.append("cards must be a non-empty object")
-    else:
-        for card_type, card in cards.items():
-            if not isinstance(card_type, str):
-                errors.append("cards keys must be strings")
-                continue
-            if not isinstance(card, dict):
-                errors.append(f"cards.{card_type or '<switch>'} must be an object")
-                continue
-            if not isinstance(card.get("label"), str) or not card.get("label"):
-                errors.append(f"cards.{card_type or '<switch>'}.label must be a non-empty string")
-            if not isinstance(card.get("allowInSubpage"), bool):
-                errors.append(f"cards.{card_type or '<switch>'}.allowInSubpage must be a boolean")
-            domains = card.get("domains", [])
-            if not isinstance(domains, list) or not all(isinstance(domain, str) for domain in domains):
-                errors.append(f"cards.{card_type or '<switch>'}.domains must be a list of strings")
-            if "pickerKey" in card and not isinstance(card.get("pickerKey"), str):
-                errors.append(f"cards.{card_type or '<switch>'}.pickerKey must be a string")
-            if "experimental" in card and not isinstance(card.get("experimental"), str):
-                errors.append(f"cards.{card_type or '<switch>'}.experimental must be a string")
-            if "hidden" in card and not isinstance(card.get("hidden"), bool):
-                errors.append(f"cards.{card_type or '<switch>'}.hidden must be a boolean")
-            options = card.get("options", [])
-            if "options" in card:
-                if not isinstance(options, list):
-                    errors.append(f"cards.{card_type or '<switch>'}.options must be a list")
-                else:
-                    for idx, option in enumerate(options):
-                        option_path = f"cards.{card_type or '<switch>'}.options[{idx}]"
-                        if not isinstance(option, dict):
-                            errors.append(f"{option_path} must be an object")
-                            continue
-                        if not isinstance(option.get("name"), str) or not option.get("name"):
-                            errors.append(f"{option_path}.name must be a non-empty string")
-                        if not isinstance(option.get("label"), str) or not option.get("label"):
-                            errors.append(f"{option_path}.label must be a non-empty string")
-                        if "kind" in option and option.get("kind") not in {"choice", "flag", "number", "text"}:
-                            errors.append(f"{option_path}.kind must be choice, flag, number, or text")
-                        for key in ("values", "storage"):
-                            value = option.get(key)
-                            if value is not None and (not isinstance(value, list) or not all(isinstance(item, str) for item in value)):
-                                errors.append(f"{option_path}.{key} must be a list of strings")
-                        if "defaultValue" in option and not isinstance(option.get("defaultValue"), str):
-                            errors.append(f"{option_path}.defaultValue must be a string")
-                        for key in ("min", "max", "step"):
-                            if key in option and not isinstance(option.get(key), (int, float)):
-                                errors.append(f"{option_path}.{key} must be a number")
-                        if "defaultValueByMode" in option:
-                            value = option.get("defaultValueByMode")
-                            if not isinstance(value, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in value.items()):
-                                errors.append(f"{option_path}.defaultValueByMode must be an object of strings")
-                        if "hidden" in option and not isinstance(option.get("hidden"), bool):
-                            errors.append(f"{option_path}.hidden must be a boolean")
-                        if "migration" in option and option.get("migration") != "drop":
-                            errors.append(f"{option_path}.migration must be drop")
-                        if "supportedWhen" in option:
-                            value = option.get("supportedWhen")
-                            if not isinstance(value, dict):
-                                errors.append(f"{option_path}.supportedWhen must be an object")
-                            else:
-                                for key in ("precision", "precisionNot", "entityDomains"):
-                                    entries = value.get(key)
-                                    if entries is not None and (not isinstance(entries, list) or not all(isinstance(item, str) for item in entries)):
-                                        errors.append(f"{option_path}.supportedWhen.{key} must be a list of strings")
-                                if "never" in value and not isinstance(value.get("never"), bool):
-                                    errors.append(f"{option_path}.supportedWhen.never must be a boolean")
-            behavior = card.get("behavior")
-            if behavior is not None:
-                if not isinstance(behavior, dict):
-                    errors.append(f"cards.{card_type or '<switch>'}.behavior must be an object")
-                else:
-                    light_temp = behavior.get("lightTemperature")
-                    if light_temp is not None:
-                        if not isinstance(light_temp, dict):
-                            errors.append(f"cards.{card_type or '<switch>'}.behavior.lightTemperature must be an object")
-                        else:
-                            if not isinstance(light_temp.get("defaultRange"), str) or "-" not in light_temp.get("defaultRange", ""):
-                                errors.append(f"cards.{card_type or '<switch>'}.behavior.lightTemperature.defaultRange must be a range string")
-                            for key in ("min", "max", "minMax", "step"):
-                                if not isinstance(light_temp.get(key), (int, float)):
-                                    errors.append(f"cards.{card_type or '<switch>'}.behavior.lightTemperature.{key} must be a number")
-                            legacy = light_temp.get("legacySensorValues", [])
-                            if not isinstance(legacy, list) or not all(isinstance(item, str) for item in legacy):
-                                errors.append(f"cards.{card_type or '<switch>'}.behavior.lightTemperature.legacySensorValues must be a list of strings")
-            default = card.get("default")
-            if not isinstance(default, dict):
-                errors.append(f"cards.{card_type or '<switch>'}.default must be an object")
-            else:
-                for field in expected_fields:
-                    if not isinstance(default.get(field), str):
-                        errors.append(f"cards.{card_type or '<switch>'}.default.{field} must be a string")
-
-    aliases = data.get("migrationAliases", {})
-    if not isinstance(aliases, dict):
-        errors.append("migrationAliases must be an object")
-    else:
-        for alias, target in aliases.items():
-            if not isinstance(alias, str) or not isinstance(target, dict):
-                errors.append("migrationAliases keys must map to objects")
-                continue
-            for field, value in target.items():
-                if field not in expected_fields:
-                    errors.append(f"migrationAliases.{alias}.{field} is not a saved config field")
-                if not isinstance(value, str):
-                    errors.append(f"migrationAliases.{alias}.{field} must be a string")
-
-    codes = data.get("subpageTypeCodes")
-    if not isinstance(codes, dict) or not codes:
-        errors.append("subpageTypeCodes must be a non-empty object")
-    else:
-        seen = {}
-        for card_type, code in codes.items():
-            if not isinstance(card_type, str) or not isinstance(code, str) or not code:
-                errors.append("subpageTypeCodes keys and values must be non-empty strings")
-                continue
-            if code in seen:
-                errors.append(f"duplicate subpage type code {code!r}: {seen[code]!r} and {card_type!r}")
-            seen[code] = card_type
-            if isinstance(cards, dict) and card_type not in cards:
-                errors.append(f"subpageTypeCodes.{card_type} must also be defined in cards")
-
-    option_select = data.get("optionSelect")
-    if not isinstance(option_select, dict):
-        errors.append("optionSelect must be an object")
-    else:
-        canonical = option_select.get("canonicalAction")
-        actions = option_select.get("actions")
-        if not isinstance(canonical, str) or not canonical:
-            errors.append("optionSelect.canonicalAction must be a non-empty string")
-        if not isinstance(actions, list) or canonical not in actions:
-            errors.append("optionSelect.actions must include optionSelect.canonicalAction")
-
-    groups = data.get("cardGroups")
-    if not isinstance(groups, dict):
-        errors.append("cardGroups must be an object")
-    else:
-        if not isinstance(groups.get("brightnessSlider"), list):
-            errors.append("cardGroups.brightnessSlider must be a list")
-        fan = groups.get("fan")
-        if not isinstance(fan, dict) or not fan:
-            errors.append("cardGroups.fan must be a non-empty object")
-        else:
-            for card_type, config in fan.items():
-                if not isinstance(config, dict) or not isinstance(config.get("defaultIcon"), str):
-                    errors.append(f"cardGroups.fan.{card_type}.defaultIcon must be a string")
-
-    large = data.get("largeNumbers")
-    if not isinstance(large, dict):
-        errors.append("largeNumbers must be an object")
-    return errors
-
-
-def assert_card_contract_valid(data):
-    errors = validate_card_contract(data)
-    if not errors:
-        return
-    print("Card contract is invalid:")
-    for error in errors:
-        print(f"  {error}")
-    raise BuildError("Card contract validation failed.")
-
 
 def js_string_list(values):
     return "[" + ", ".join(json.dumps(v) for v in values) + "]"
@@ -1539,7 +1369,7 @@ def main():
                 print(f"Unknown command: {cmd}")
                 print("Usage: python scripts/build.py [all|entities|contract|devices|icons|model|www] [--check]")
                 exit_code = 1
-    except BuildError as exc:
+    except (BuildError, ProductSchemaError) as exc:
         print(exc)
         return 1
 
