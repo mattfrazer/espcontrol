@@ -7,6 +7,7 @@
 constexpr uint32_t TODO_CARD_CTX_MAGIC = 0x544F444F;  // TODO
 constexpr int TODO_MAX_ITEMS = 8;
 constexpr size_t TODO_RESPONSE_TEXT_MAX_LEN = 1536;
+constexpr uint32_t TODO_ITEMS_REQUEST_TIMEOUT_MS = 10000;
 constexpr uint32_t TODO_COMPLETED_TEXT_COLOR = 0x707070;
 constexpr uint32_t TODO_COMPLETED_CHECK_COLOR = 0xC0C0C0;
 
@@ -55,7 +56,9 @@ struct TodoModalUi {
   lv_obj_t *title_lbl = nullptr;
   lv_obj_t *list = nullptr;
   lv_obj_t *status_lbl = nullptr;
+  lv_timer_t *loading_timer = nullptr;
   TodoCardCtx *active = nullptr;
+  uint32_t loading_call_id = 0;
   TodoItemClick item_clicks[TODO_MAX_ITEMS];
   std::vector<TodoItem> visible_items;
   std::vector<TodoItem> completed_items;
@@ -254,8 +257,18 @@ inline void todo_visible_item_set_completed(const TodoItem &item, bool completed
   }
 }
 
+inline void todo_modal_cancel_loading_timer() {
+  TodoModalUi &ui = todo_modal_ui();
+  ui.loading_call_id = 0;
+  if (ui.loading_timer) {
+    lv_timer_del(ui.loading_timer);
+    ui.loading_timer = nullptr;
+  }
+}
+
 inline void todo_modal_hide() {
   TodoModalUi &ui = todo_modal_ui();
+  todo_modal_cancel_loading_timer();
   control_modal_delete_overlay(ControlModalKind::TODO_LIST, ui.overlay);
   ui = TodoModalUi();
 }
@@ -277,6 +290,30 @@ inline void todo_modal_set_status(const char *text) {
   lv_label_set_text(ui.status_lbl, text ? text : "");
   if (wants_visible) lv_obj_clear_flag(ui.status_lbl, LV_OBJ_FLAG_HIDDEN);
   else lv_obj_add_flag(ui.status_lbl, LV_OBJ_FLAG_HIDDEN);
+}
+
+inline void todo_modal_loading_timeout_cb(lv_timer_t *timer) {
+  TodoModalUi &ui = todo_modal_ui();
+  if (ui.loading_timer != timer) {
+    lv_timer_del(timer);
+    return;
+  }
+  TodoCardCtx *ctx = ui.active;
+  ui.loading_timer = nullptr;
+  ui.loading_call_id = 0;
+  if (todo_card_context_valid(ctx)) {
+    ESP_LOGW("todo", "Todo request timed out for %s",
+      ctx->entity_id.empty() ? "todo" : ctx->entity_id.c_str());
+    todo_modal_set_status("Could not load");
+  }
+  lv_timer_del(timer);
+}
+
+inline void todo_modal_start_loading_timer(uint32_t call_id) {
+  todo_modal_cancel_loading_timer();
+  TodoModalUi &ui = todo_modal_ui();
+  ui.loading_call_id = call_id;
+  ui.loading_timer = lv_timer_create(todo_modal_loading_timeout_cb, TODO_ITEMS_REQUEST_TIMEOUT_MS, nullptr);
 }
 
 inline void todo_modal_clear_items() {
@@ -530,18 +567,21 @@ inline void todo_modal_render_items(TodoCardCtx *ctx, const std::vector<TodoItem
   }
 }
 
-inline std::string todo_items_response_template(const std::string &entity_id) {
+inline std::string todo_items_response_template(const std::string &entity_id,
+                                                const char *status) {
+  std::string wanted_status = status ? status : "";
   return std::string("{% set entity = '") + entity_id + "' %}"
+    "{% set wanted_status = '" + wanted_status + "' %}"
     "{% set items = response.get(entity, {}).get('items', []) %}"
     "{% set ns = namespace(count=0, out='') %}"
     "{% macro esc(v) -%}{{ (v|string)|replace('%','%25')|replace('|','%7C')|replace('\\n','%0A')|replace('\\r','%0D') }}{%- endmacro %}"
     "{% for item in items %}"
-    "{% if item.status is not defined or item.status == 'needs_action' or item.status == 'completed' %}"
+    "{% set item_status = item.status if item.status is defined else 'needs_action' %}"
+    "{% if (not wanted_status and (item_status == 'needs_action' or item_status == 'completed')) or item_status == wanted_status %}"
     "{% if ns.count < " + std::to_string(TODO_MAX_ITEMS) + " %}"
     "{% set summary = item.summary if item.summary is defined else '' %}"
     "{% set key = item.uid if item.uid is defined and item.uid else summary %}"
-    "{% set status = item.status if item.status is defined else 'needs_action' %}"
-    "{% set ns.out = ns.out ~ ('\\n' if ns.out else '') ~ esc(key) ~ '|' ~ esc(summary) ~ '|' ~ esc(status) %}"
+    "{% set ns.out = ns.out ~ ('\\n' if ns.out else '') ~ esc(key) ~ '|' ~ esc(summary) ~ '|' ~ esc(item_status) %}"
     "{% endif %}"
     "{% set ns.count = ns.count + 1 %}"
     "{% endif %}"
@@ -560,13 +600,11 @@ inline bool todo_begin_get_items_request(esphome::api::HomeassistantActionReques
                                          const char *status,
                                          uint32_t call_id) {
   if (!todo_card_context_valid(ctx) || !todo_entity_id_safe(ctx->entity_id)) return false;
-  size_t data_count = status && status[0] ? 2 : 1;
-  if (!ha_action_begin(req, "todo.get_items", false, data_count, call_id)) return false;
+  if (!ha_action_begin(req, "todo.get_items", false, 1, call_id)) return false;
   req.wants_response = true;
-  std::string response_template = todo_items_response_template(ctx->entity_id);
+  std::string response_template = todo_items_response_template(ctx->entity_id, status);
   req.response_template = decltype(req.response_template)(response_template);
   ha_action_add_entity(req, ctx->entity_id);
-  if (status && status[0]) ha_action_add_data(req, "status", status);
   return true;
 }
 
@@ -581,11 +619,14 @@ inline void request_todo_items(TodoCardCtx *ctx) {
     todo_modal_set_status("Could not load");
     return;
   }
+  todo_modal_start_loading_timer(call_id);
 
-  ha_register_action_response_callback(
+  bool registered = ha_register_action_response_callback(
     req.call_id,
-    [ctx](const esphome::api::ActionResponse &response) {
-      if (todo_modal_ui().active != ctx) return;
+    [ctx, call_id](const esphome::api::ActionResponse &response) {
+      TodoModalUi &ui = todo_modal_ui();
+      if (ui.active != ctx || ui.loading_call_id != call_id) return;
+      todo_modal_cancel_loading_timer();
       if (!response.is_success()) {
         ESP_LOGW("todo", "Todo request failed for %s: %s",
           ctx && !ctx->entity_id.empty() ? ctx->entity_id.c_str() : "todo",
@@ -604,7 +645,10 @@ inline void request_todo_items(TodoCardCtx *ctx) {
       todo_modal_render_items(ctx, items);
       if (ctx && ctx->show_completed_items) request_todo_completed_items(ctx);
     });
-  ha_action_send(req);
+  if (!registered || !ha_action_send(req)) {
+    todo_modal_cancel_loading_timer();
+    todo_modal_set_status("Could not load");
+  }
 }
 
 inline void request_todo_completed_items(TodoCardCtx *ctx) {
