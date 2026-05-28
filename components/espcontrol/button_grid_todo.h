@@ -402,8 +402,8 @@ inline void todo_modal_render_items(TodoCardCtx *ctx, const std::vector<TodoItem
   if (row_h < 30) row_h = 30;
   lv_coord_t checkbox_size = control_modal_scaled_px(15, layout.short_side);
   if (checkbox_size < 11) checkbox_size = 11;
-  lv_coord_t item_gap = control_modal_scaled_px(12, layout.short_side);
-  if (item_gap < 8) item_gap = 8;
+  lv_coord_t item_gap = control_modal_scaled_px(18, layout.short_side);
+  if (item_gap < 12) item_gap = 12;
   lv_coord_t content_w = ui.list ? lv_obj_get_width(ui.list) : layout.panel_w;
   if (content_w <= 0) content_w = layout.panel_w - layout.inset * 2;
   int click_index = 0;
