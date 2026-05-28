@@ -15,6 +15,10 @@ WEB_OUTPUT_DIR = ROOT / "docs" / "public" / "webserver"
 DEVICE_CAPABILITIES_JSON = ROOT / "docs" / "public" / "device-profiles.json"
 DEVICE_DOCS_DIR = ROOT / "docs" / "generated" / "screens"
 COMPAT_FIXTURES = ROOT / "compatibility" / "fixtures" / "product_compatibility.json"
+REQUIRED_SETUP_ICON_GLYPHS = {
+    r'"\U000F012C"': "mdi-check",
+    r'"\U000F0996"': "mdi-progress-clock",
+}
 
 
 def read_json(path: Path) -> object:
@@ -78,6 +82,14 @@ def test_generated_yaml(profiles: dict[str, dict]) -> None:
         assert f"cfg.num_slots = {profile['slots']};" in sensors, f"{slug}: sensors.yaml missing slot count"
 
 
+def test_setup_icon_fonts(profile_slugs: list[str]) -> None:
+    for slug in profile_slugs:
+        fonts_path = ROOT / "devices" / slug / "device" / "fonts.yaml"
+        fonts = fonts_path.read_text(encoding="utf-8")
+        for glyph, icon_name in REQUIRED_SETUP_ICON_GLYPHS.items():
+            assert glyph in fonts, f"{slug}: setup icon font missing {icon_name} for OTA update screen"
+
+
 def test_firmware_matrices(profile_slugs: list[str]) -> None:
     profiles = load_device_profiles()
     release = device_matrix.release_matrix(profiles)
@@ -99,6 +111,7 @@ def main() -> int:
     test_public_device_capabilities(profile_slugs)
     test_generated_web(profile_slugs)
     test_generated_yaml(profiles)
+    test_setup_icon_fonts(profile_slugs)
     test_firmware_matrices(profile_slugs)
     test_public_firmware_slugs(profile_slugs)
     print("Device profile cross-checks passed.")
