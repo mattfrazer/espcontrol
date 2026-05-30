@@ -360,7 +360,9 @@
           "climateOptionValue": "font_roboto_regular_24_text"
         },
         "display": {
-          "wrapTallLabels": true
+          "wrapTallLabels": true,
+          "subpageChevronX": 4,
+          "subpageChevronY": -2
         },
         "package": {
           "substitutions": {
