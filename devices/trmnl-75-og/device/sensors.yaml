@@ -39,8 +39,30 @@ script:
       - script.execute: trmnl_update_clock_bar
       - lambda: |-
           espcontrol::epaper_dashboard_update_lvgl_page(id(trmnl_current_page));
+          if (id(trmnl_force_full_refresh)) {
+            id(epaper).set_full_update_every(1);
+          } else {
+            id(epaper).set_full_update_every(30);
+          }
       - delay: 250ms
       - component.update: epaper
+      - lambda: |-
+          id(epaper).set_full_update_every(30);
+          id(trmnl_force_full_refresh) = false;
+
+  - id: trmnl_refresh_display_full
+    mode: restart
+    then:
+      - lambda: |-
+          id(trmnl_force_full_refresh) = true;
+      - script.execute: trmnl_refresh_display
+
+  - id: trmnl_refresh_display_partial
+    mode: restart
+    then:
+      - lambda: |-
+          id(trmnl_force_full_refresh) = false;
+      - script.execute: trmnl_refresh_display
 
   - id: trmnl_sync_dashboard_config
     then:
@@ -63,9 +85,9 @@ script:
           // END GENERATED TRMNL DASHBOARD CONFIG
 
 interval:
-  - interval: 5min
+  - interval: 1min
     then:
-      - script.execute: trmnl_refresh_display
+      - script.execute: trmnl_refresh_display_partial
 
   - interval: 45s
     then:
@@ -73,4 +95,8 @@ interval:
           condition:
             lambda: "return espcontrol::epaper_dashboard_is_dirty();"
           then:
-            - script.execute: trmnl_refresh_display
+            - script.execute: trmnl_refresh_display_partial
+
+  - interval: 30min
+    then:
+      - script.execute: trmnl_refresh_display_full

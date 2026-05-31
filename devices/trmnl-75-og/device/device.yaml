@@ -53,7 +53,7 @@ esphome:
               - lvgl.page.show: trmnl_wifi_setup_page
             else:
               - lvgl.page.show: main_page
-              - script.execute: trmnl_refresh_display
+              - script.execute: trmnl_refresh_display_full
 
 logger:
 
@@ -64,7 +64,7 @@ wifi:
     ap_timeout: 90s
   on_connect:
     - lvgl.page.show: main_page
-    - script.execute: trmnl_refresh_display
+    - script.execute: trmnl_refresh_display_full
   on_disconnect:
     - delay: 90s
     - if:
@@ -73,7 +73,11 @@ wifi:
             wifi.connected:
         then:
           - lvgl.page.show: trmnl_wifi_setup_page
+          - lambda: |-
+              id(epaper).set_full_update_every(1);
           - component.update: epaper
+          - lambda: |-
+              id(epaper).set_full_update_every(30);
 
 api:
   reboot_timeout: 0s
@@ -81,7 +85,7 @@ api:
   on_client_connected:
     - delay: 2s
     - script.execute: trmnl_sync_dashboard_config
-    - script.execute: trmnl_refresh_display
+    - script.execute: trmnl_refresh_display_full
 
 ota:
   - platform: esphome
@@ -130,6 +134,10 @@ globals:
     type: int
     restore_value: true
     initial_value: "0"
+  - id: trmnl_force_full_refresh
+    type: bool
+    restore_value: false
+    initial_value: "false"
 
 binary_sensor:
   - platform: gpio
@@ -150,7 +158,7 @@ binary_sensor:
         - lambda: |-
             id(trmnl_current_page) = espcontrol::epaper_dashboard_wrap_page(id(trmnl_current_page) - 1);
             espcontrol::epaper_dashboard_mark_dirty();
-        - script.execute: trmnl_refresh_display
+        - script.execute: trmnl_refresh_display_full
 
   - platform: gpio
     id: trmnl_key_home
@@ -170,7 +178,7 @@ binary_sensor:
         - lambda: |-
             id(trmnl_current_page) = 0;
             espcontrol::epaper_dashboard_mark_dirty();
-        - script.execute: trmnl_refresh_display
+        - script.execute: trmnl_refresh_display_full
 
   - platform: gpio
     id: trmnl_key_next
@@ -190,12 +198,12 @@ binary_sensor:
         - lambda: |-
             id(trmnl_current_page) = espcontrol::epaper_dashboard_wrap_page(id(trmnl_current_page) + 1);
             espcontrol::epaper_dashboard_mark_dirty();
-        - script.execute: trmnl_refresh_display
+        - script.execute: trmnl_refresh_display_full
 
 display:
   - platform: waveshare_epaper
     id: epaper
-    model: 7.50inv2
+    model: 7.50inv2p
     cs_pin: GPIO44
     dc_pin: GPIO10
     reset_pin: GPIO38
@@ -204,6 +212,7 @@ display:
       inverted: true
     update_interval: never
     auto_clear_enabled: false
+    full_update_every: 30
     rotation: 0
 
 lvgl:
