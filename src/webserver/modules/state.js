@@ -11,7 +11,7 @@ var THEME_PRESETS = {
 };
 
 function defaultTheme() {
-  return (CFG.features && CFG.features.epaperDisplay) ? "Light" : "Dark";
+  return "Dark";
 }
 
 function defaultTimezoneOptions() {
@@ -566,8 +566,7 @@ function syncThemeFromDevice(theme, options) {
 
 function syncClockBarUi() {
   syncPreviewGridTop();
-  var fixedEpaperTopbar = CFG.features && CFG.features.epaperDisplay;
-  if (els.topbar) els.topbar.className = "sp-topbar" + (state.clockBarOn || fixedEpaperTopbar ? "" : " sp-hidden");
+  if (els.topbar) els.topbar.className = "sp-topbar" + (state.clockBarOn ? "" : " sp-hidden");
   if (els.setClockBarToggle) els.setClockBarToggle.checked = !!state.clockBarOn;
   if (els.setNetworkStatusToggle) {
     els.setNetworkStatusToggle.checked = !!state.networkStatusOn;

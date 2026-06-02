@@ -486,10 +486,6 @@ def web_features(profile: dict[str, Any]) -> dict[str, Any]:
         features["internalRelays"] = copy.deepcopy(profile["internalRelays"])
     if package.get("subpageConfigChunks"):
         features["subpageConfigChunks"] = package["subpageConfigChunks"]
-    display = profile["firmware"].get("display") or {}
-    if display.get("mode") == "monochrome":
-        features["monochromeDisplay"] = True
-        features["epaperDisplay"] = True
     return features
 
 
