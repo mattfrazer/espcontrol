@@ -561,7 +561,7 @@ number:
     name: "${entity_screen_saver_cover_art_delay}"
     internal: true
     id: cover_art_delay
-    min_value: 0
+    min_value: 5
     max_value: 300
     step: 1
     initial_value: 10
