@@ -880,10 +880,12 @@ function addSingleCardMenuItems(slot) {
 }
 
 function addClockBarSelectionMenuItems(item) {
-  addCtxItem("pencil", "Edit " + clockBarItemLabel(item), function () {
-    setClockBarItemSelected(item, true);
-  });
-  addCtxDivider();
+  if (clockBarItemHasSettings(item)) {
+    addCtxItem("pencil", "Edit " + clockBarItemLabel(item), function () {
+      setClockBarItemSelected(item, true);
+    });
+    addCtxDivider();
+  }
   addCtxItem("delete", "Delete", function () {
     deleteClockBarItem(item);
     renderButtonSettings();

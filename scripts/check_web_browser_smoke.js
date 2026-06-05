@@ -685,9 +685,15 @@ async function assertClockBarEditorSmoke(page, posts, label) {
   await page.locator(".sp-settings-close").click();
 
   before = posts.length;
-  await selectAndOpenClockBarEditor('[data-clockbar-item="network"]', "Network Status");
-  assert.strictEqual(await page.locator("#sp-clockbar-network-status-icon").count(), 0, `${label}: network visibility toggle stays out of clock bar editor`);
-  await page.getByRole("button", { name: "Delete" }).click();
+  await page.locator('[data-clockbar-item="network"]').click();
+  await expectClockBarSelection();
+  assert.strictEqual(
+    await page.locator(".sp-selection-bar.sp-visible").getByRole("button", { name: "Edit", exact: true }).count(),
+    0,
+    `${label}: network status selection has no empty editor`
+  );
+  await page.getByRole("button", { name: "Clock bar item actions" }).click();
+  await page.getByText("Delete", { exact: true }).click();
   await waitForPost(posts, { domain: "switch", name: "screen__network_status_icon", action: "turn_off" }, `${label}: delete network`, before);
   await page.locator('[data-clockbar-item="network"]').waitFor({ state: "detached" });
   const topbarBox = await page.locator(".sp-topbar").boundingBox();

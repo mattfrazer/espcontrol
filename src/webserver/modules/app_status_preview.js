@@ -156,6 +156,10 @@ function clockBarItemLabel(item) {
   return "Clock Bar";
 }
 
+function clockBarItemHasSettings(item) {
+  return isClockBarTemperatureItem(item) || item === "time";
+}
+
 function clockBarItemIcon(item) {
   if (isClockBarTemperatureItem(item)) return "thermometer";
   if (item === "time") return "clock-outline";

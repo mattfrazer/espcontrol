@@ -43,7 +43,7 @@ function renderSelectionBar(c) {
   var actions = document.createElement("div");
   actions.className = "sp-selection-actions";
 
-  if (clockBarItem || c.selected.length === 1) {
+  if ((clockBarItem && clockBarItemHasSettings(clockBarItem)) || (!clockBarItem && c.selected.length === 1)) {
     var editBtn = document.createElement("button");
     editBtn.type = "button";
     editBtn.className = "sp-selection-btn sp-selection-btn-primary";
@@ -112,6 +112,7 @@ function handleDocumentSelectionMouseDown(e) {
 function openSelectedCardSettings() {
   if (isConfigLocked()) return;
   if (state.clockBarSelectedItem) {
+    if (!clockBarItemHasSettings(state.clockBarSelectedItem)) return;
     renderButtonSettings(true);
     return;
   }
@@ -173,10 +174,14 @@ function renderClockBarTemperatureEntityControl(panel, item) {
 
 function renderClockBarSettings(forceOpen) {
   if (!state.clockBarSelectedItem) return false;
+  var item = state.clockBarSelectedItem;
+  if (!clockBarItemHasSettings(item)) {
+    hideSettingsOverlay();
+    return false;
+  }
   if (!forceOpen && !isSettingsOpen()) return true;
   if (els.settingsOverlay) els.settingsOverlay.classList.add("sp-visible");
 
-  var item = state.clockBarSelectedItem;
   var container = els.buttonSettings;
   var title = document.createElement("div");
   title.className = "sp-section-title";
