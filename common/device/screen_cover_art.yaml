@@ -748,6 +748,18 @@ script:
           then:
             - script.execute: cover_art_request_artwork
 
+  - id: cover_art_process_cached_artwork
+    mode: restart
+    then:
+      - delay: 300ms
+      - if:
+          condition:
+            lambda: |-
+              return id(cover_art_screensaver_active) &&
+                     id(cover_art_screensaver_enabled).state;
+          then:
+            - script.execute: cover_art_use_cached_artwork
+
   - id: cover_art_use_cached_artwork
     mode: restart
     then:
@@ -1375,14 +1387,16 @@ script:
                 return;
               }
               cached = url;
+              if (!local) {
+                id(cover_art_cached_local_url).clear();
+              }
               ESP_LOGI("cover_art", "Cached artwork %s (%u chars, url %u chars, active=%s)",
                        local ? "entity_picture_local" : "entity_picture",
                        (unsigned) path.size(), (unsigned) url.size(),
                        id(cover_art_screensaver_active) ? "true" : "false");
 
               if (id(cover_art_screensaver_active)) {
-                id(cover_art_use_cached_artwork).execute();
-                id(cover_art_request_artwork).execute();
+                id(cover_art_process_cached_artwork).execute();
               }
             };
           if (!already_subscribed) {
