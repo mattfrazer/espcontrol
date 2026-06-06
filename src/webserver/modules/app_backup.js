@@ -45,6 +45,7 @@ function exportConfig() {
       cover_art_delay: state.coverArtDelay,
       cover_art_track_overlay_duration: state.coverArtTrackOverlayDuration,
       cover_art_progress_bar: state.coverArtProgressBarOn,
+      cover_art_hide_external_input: state.coverArtHideExternalInputOn,
       cover_art_open_media_subpage: state.coverArtOpenMediaSubpageOn,
       cover_art_media_subpage_target: state.coverArtMediaSubpageTarget,
       screensaver_action: normalizeScreensaverAction(state.screensaverAction),
@@ -224,6 +225,7 @@ function importConfig() {
         postNumber(entityName("screen_saver_cover_art_delay"), importedSettings.coverArtDelay);
         postNumber(entityName("screen_saver_track_overlay_duration"), importedSettings.coverArtTrackOverlayDuration);
         postSwitch(entityName("screen_saver_cover_art_progress_bar"), importedSettings.coverArtProgressBar);
+        postSwitch(entityName("screen_saver_hide_cover_art_external_input"), importedSettings.coverArtHideExternalInput);
         postSwitch(entityName("screen_saver_open_media_subpage"), importedSettings.coverArtOpenMediaSubpage);
         postText(entityName("screen_saver_media_subpage"), importedSettings.coverArtMediaSubpageTarget);
         var importedScreensaverAction = importedSettings.screensaverAction;
@@ -276,6 +278,7 @@ function importConfig() {
         state.coverArtDelay = importedSettings.coverArtDelay;
         state.coverArtTrackOverlayDuration = importedSettings.coverArtTrackOverlayDuration;
         state.coverArtProgressBarOn = importedSettings.coverArtProgressBar;
+        state.coverArtHideExternalInputOn = importedSettings.coverArtHideExternalInput;
         state.coverArtOpenMediaSubpageOn = importedSettings.coverArtOpenMediaSubpage;
         state.coverArtMediaSubpageTarget = importedSettings.coverArtMediaSubpageTarget || "";
         state.screensaverAction = importedScreensaverAction;

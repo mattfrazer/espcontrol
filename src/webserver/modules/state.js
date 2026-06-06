@@ -90,6 +90,7 @@ var state = {
   coverArtDelay: 10,
   coverArtTrackOverlayDuration: 5,
   coverArtProgressBarOn: true,
+  coverArtHideExternalInputOn: false,
   coverArtOpenMediaSubpageOn: false,
   coverArtMediaSubpageTarget: "",
   screensaverMode: "disabled",

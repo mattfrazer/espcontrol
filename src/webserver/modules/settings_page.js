@@ -641,6 +641,17 @@ function buildSettingsPage(parent) {
     });
     els.setCoverArtProgressBarToggle = coverArtProgressBarToggle.input;
 
+    var coverArtHideExternalInputToggle = toggleRow(
+      "Hide Cover Art On External Input",
+      "sp-set-ss-cover-art-hide-external-input",
+      state.coverArtHideExternalInputOn);
+    coverArtOptions.appendChild(coverArtHideExternalInputToggle.row);
+    coverArtHideExternalInputToggle.input.addEventListener("change", function () {
+      state.coverArtHideExternalInputOn = this.checked;
+      postSwitch(entityName("screen_saver_hide_cover_art_external_input"), state.coverArtHideExternalInputOn);
+    });
+    els.setCoverArtHideExternalInputToggle = coverArtHideExternalInputToggle.input;
+
     var coverArtOpenSubpageToggle = toggleRow(
       "Open Media Subpage While Playing",
       "sp-set-ss-cover-art-open-media",
@@ -1064,6 +1075,9 @@ function syncCoverArtScreensaverUi() {
   }
   if (els.setCoverArtProgressBarToggle) {
     els.setCoverArtProgressBarToggle.checked = !!state.coverArtProgressBarOn;
+  }
+  if (els.setCoverArtHideExternalInputToggle) {
+    els.setCoverArtHideExternalInputToggle.checked = !!state.coverArtHideExternalInputOn;
   }
   if (els.setCoverArtOpenMediaSubpageToggle) {
     els.setCoverArtOpenMediaSubpageToggle.checked = !!state.coverArtOpenMediaSubpageOn;

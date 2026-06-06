@@ -240,6 +240,16 @@ var ENTITY_CATALOG = {
         "cover_art_progress_bar"
       ]
     },
+    "screen_saver_hide_cover_art_external_input": {
+      "domain": "switch",
+      "name": "Screen Saver: Hide Cover Art On External Input",
+      "objectIds": [
+        "screen_saver__hide_cover_art_on_external_input",
+        "screen_saver_hide_cover_art_on_external_input",
+        "hide_cover_art_on_external_input",
+        "cover_art_hide_external_input"
+      ]
+    },
     "screen_saver_open_media_subpage": {
       "domain": "switch",
       "name": "Screen Saver: Open Media Subpage While Playing",
@@ -537,6 +547,7 @@ var ENTITY_CATALOG = {
       "screen_saver_cover_art_delay",
       "screen_saver_track_overlay_duration",
       "screen_saver_cover_art_progress_bar",
+      "screen_saver_hide_cover_art_external_input",
       "screen_saver_open_media_subpage",
       "screen_saver_media_subpage",
       "screen_saver_daytime_clock_brightness",

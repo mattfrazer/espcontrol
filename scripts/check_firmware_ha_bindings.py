@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FIRMWARE_DIR = ROOT / "components" / "espcontrol"
 CORE_INFRA_PATH = ROOT / "common" / "device" / "core_infra.yaml"
 API_NAVIGATE_PATH = ROOT / "common" / "device" / "api_navigate.yaml"
+COVER_ART_PATH = ROOT / "common" / "device" / "screen_cover_art.yaml"
 TIME_ADDON_PATH = ROOT / "common" / "addon" / "time.yaml"
 SUN_CALC_PATH = ROOT / "components" / "espcontrol" / "sun_calc.h"
 S3_DEVICE_PATH = ROOT / "devices" / "guition-esp32-s3-4848s040" / "device" / "device.yaml"
@@ -535,6 +536,29 @@ def firmware_cover_request_errors(firmware_dir: Path, core_infra_path: Path, roo
     return errors
 
 
+def firmware_cover_art_external_input_errors(path: Path, root: Path) -> list[str]:
+    if not path.exists():
+        return []
+    rel = path.relative_to(root)
+    text = path.read_text(encoding="utf-8")
+    errors: list[str] = []
+    if "cover_art_hide_external_input_enabled" not in text:
+        errors.append(f"{rel}: expose a cover art external-input hide setting")
+    if 'ha_subscribe_attribute(cover_entity, std::string("source"), handle_media_source)' not in text:
+        errors.append(f"{rel}: subscribe to the media player source attribute")
+    if 'ha_get_attribute(cover_entity, std::string("source"), handle_media_source)' not in text:
+        errors.append(f"{rel}: refresh the media player source attribute")
+    if 'next == "TV"' not in text or 'next == "Line-in"' not in text:
+        errors.append(f"{rel}: treat TV and Line-in sources as external inputs")
+    if "cover_art_apply_external_input_policy" not in text:
+        errors.append(f"{rel}: centralize cover art external-input behavior")
+    if "script.stop: cover_art_request_artwork" not in text:
+        errors.append(f"{rel}: stop pending artwork requests while an external input is active")
+    if "id(cover_art_hide_external_input_enabled).state &&" not in text:
+        errors.append(f"{rel}: guard cover art start/download paths when external input hiding is enabled")
+    return errors
+
+
 def firmware_climate_step_errors(firmware_dir: Path, root: Path) -> list[str]:
     path = firmware_dir / "button_grid_climate.h"
     if not path.exists():
@@ -669,6 +693,7 @@ def run_scan() -> int:
     errors.extend(firmware_weather_reconnect_errors(CORE_INFRA_PATH, ROOT))
     errors.extend(firmware_unavailable_retry_errors(FIRMWARE_DIR, CORE_INFRA_PATH, ROOT))
     errors.extend(firmware_cover_request_errors(FIRMWARE_DIR, CORE_INFRA_PATH, ROOT))
+    errors.extend(firmware_cover_art_external_input_errors(COVER_ART_PATH, ROOT))
     errors.extend(firmware_climate_step_errors(FIRMWARE_DIR, ROOT))
     errors.extend(
         firmware_s3_api_errors(
@@ -917,6 +942,20 @@ def expect_cover_request_errors(
         core_path.write_text(core_text, encoding="utf-8")
 
         errors = firmware_cover_request_errors(firmware_dir, core_path, root)
+        for item in expected:
+            assert any(item in error for error in errors), f"{name}: missing {item!r} in {errors!r}"
+        if not expected:
+            assert not errors, f"{name}: expected no errors, got {errors!r}"
+
+
+def expect_cover_art_external_input_errors(name: str, text: str, expected: tuple[str, ...]) -> None:
+    with TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        path = root / "common" / "device" / "screen_cover_art.yaml"
+        path.parent.mkdir(parents=True)
+        path.write_text(text, encoding="utf-8")
+
+        errors = firmware_cover_art_external_input_errors(path, root)
         for item in expected:
             assert any(item in error for error in errors), f"{name}: missing {item!r} in {errors!r}"
         if not expected:
@@ -1670,6 +1709,35 @@ def run_self_test() -> int:
         "}\n",
         "api:\n  on_client_connected:\n    - lambda: refresh_weather_forecast_cards();\n",
         ("cancel pending cover stop callbacks when the HA API disconnects",),
+    )
+    expect_cover_art_external_input_errors(
+        "missing cover art source handling",
+        "script:\n"
+        "  - id: cover_art_request_artwork\n"
+        "    then:\n"
+        "      - lambda: |-\n"
+        "          id(cover_art_hide_external_input_enabled).state && id(cover_art_external_input_active);\n",
+        (
+            "subscribe to the media player source attribute",
+            "treat TV and Line-in sources as external inputs",
+            "stop pending artwork requests",
+        ),
+    )
+    expect_cover_art_external_input_errors(
+        "cover art source handling present",
+        "switch:\n"
+        "  - platform: template\n"
+        "    id: cover_art_hide_external_input_enabled\n"
+        "script:\n"
+        "  - id: cover_art_apply_external_input_policy\n"
+        "    then:\n"
+        "      - script.stop: cover_art_request_artwork\n"
+        "      - lambda: |-\n"
+        "          id(cover_art_hide_external_input_enabled).state && id(cover_art_external_input_active);\n"
+        "          bool external = next == \"TV\" || next == \"Line-in\";\n"
+        "          ha_subscribe_attribute(cover_entity, std::string(\"source\"), handle_media_source);\n"
+        "          ha_get_attribute(cover_entity, std::string(\"source\"), handle_media_source);\n",
+        (),
     )
     expect_climate_step_errors(
         "climate ignores whole-number display step",

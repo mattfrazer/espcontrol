@@ -17,6 +17,7 @@ var SSE_ALIAS_GROUPS = {
   coverArtDelay: ["number-screen_saver__cover_art_delay", "number-screen_saver_cover_art_delay", "number-cover_art_delay"],
   trackOverlayDuration: ["number-screen_saver__track_overlay_duration", "number-screen_saver_track_overlay_duration", "number-track_overlay_duration"],
   coverArtProgressBar: ["switch-screen_saver__cover_art_progress_bar", "switch-screen_saver_cover_art_progress_bar", "switch-cover_art_progress_bar"],
+  coverArtHideExternalInput: ["switch-screen_saver__hide_cover_art_on_external_input", "switch-screen_saver_hide_cover_art_on_external_input", "switch-hide_cover_art_on_external_input", "switch-cover_art_hide_external_input"],
   openMediaSubpage: ["switch-screen_saver__open_media_subpage_while_playing", "switch-screen_saver_open_media_subpage_while_playing", "switch-screen_saver__open_media_subpage", "switch-screen_saver_open_media_subpage", "switch-open_media_subpage_while_playing"],
   mediaSubpageTarget: ["text-screen_saver__media_subpage", "text-screen_saver_media_subpage", "text-cover_art_media_subpage"],
   scheduleWakeTimeout: ["number-screen__schedule_wake_timeout", "number-screen_schedule_wake_timeout", "number-schedule_wake_timeout"],
@@ -188,6 +189,10 @@ function connectEvents() {
     },
     "switch-screen_saver__cover_art_progress_bar": function (val, d) {
       state.coverArtProgressBarOn = d.value === true || val === "ON";
+      syncCoverArtScreensaverUi();
+    },
+    "switch-screen_saver__hide_cover_art_on_external_input": function (val, d) {
+      state.coverArtHideExternalInputOn = d.value === true || val === "ON";
       syncCoverArtScreensaverUi();
     },
     "number-screen_saver__clock_brightness": function (val) {
@@ -446,6 +451,7 @@ function connectEvents() {
   addSseAliases(sseHandlers, SSE_ALIAS_GROUPS.coverArtDelay, sseHandlers["number-screen_saver__cover_art_delay"]);
   addSseAliases(sseHandlers, SSE_ALIAS_GROUPS.trackOverlayDuration, sseHandlers["number-screen_saver__track_overlay_duration"]);
   addSseAliases(sseHandlers, SSE_ALIAS_GROUPS.coverArtProgressBar, sseHandlers["switch-screen_saver__cover_art_progress_bar"]);
+  addSseAliases(sseHandlers, SSE_ALIAS_GROUPS.coverArtHideExternalInput, sseHandlers["switch-screen_saver__hide_cover_art_on_external_input"]);
   addSseAliases(sseHandlers, SSE_ALIAS_GROUPS.openMediaSubpage, sseHandlers["switch-screen_saver__open_media_subpage"]);
   addSseAliases(sseHandlers, SSE_ALIAS_GROUPS.mediaSubpageTarget, sseHandlers["text-screen_saver__media_subpage"]);
   addSseAliases(sseHandlers, SSE_ALIAS_GROUPS.scheduleWakeTimeout, sseHandlers["number-screen__schedule_wake_timeout"]);

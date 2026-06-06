@@ -409,6 +409,21 @@ switch:
     on_turn_off:
       - lvgl.widget.hide: cover_art_progress_bar
 
+  - platform: template
+    name: "${entity_screen_saver_hide_cover_art_external_input}"
+    internal: true
+    id: cover_art_hide_external_input_enabled
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+    icon: "mdi:television-classic"
+    entity_category: config
+    web_server:
+      sorting_group_id: sg_screensaver
+    on_turn_on:
+      - script.execute: cover_art_apply_external_input_policy
+    on_turn_off:
+      - script.execute: cover_art_apply_external_input_policy
+
 select:
   - platform: template
     name: "${entity_screen_saver_action}"

@@ -84,9 +84,19 @@ assert(
   Array.from(hooks.SSE_ALIAS_GROUPS.openMediaSubpage).includes("switch-screen_saver__open_media_subpage_while_playing"),
   "open media subpage SSE aliases include the full generated object id"
 );
+assert.deepStrictEqual(Array.from(hooks.SSE_ALIAS_GROUPS.coverArtHideExternalInput), [
+  "switch-screen_saver__hide_cover_art_on_external_input",
+  "switch-screen_saver_hide_cover_art_on_external_input",
+  "switch-hide_cover_art_on_external_input",
+  "switch-cover_art_hide_external_input",
+], "cover art external-input SSE aliases are registered together");
 assert(
   Array.from(hooks.entityLookupNames("screen_saver_open_media_subpage")).includes("screen_saver__open_media_subpage_while_playing"),
   "open media subpage post aliases include the full generated object id"
+);
+assert(
+  Array.from(hooks.entityLookupNames("screen_saver_hide_cover_art_external_input")).includes("screen_saver__hide_cover_art_on_external_input"),
+  "cover art external-input post aliases include the full generated object id"
 );
 
 const manifest = JSON.parse(fs.readFileSync(DEVICE_MANIFEST, "utf8"));
