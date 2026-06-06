@@ -31,6 +31,7 @@ var CSS =
 
   ".sp-support-btn{position:fixed;right:28px;bottom:28px;z-index:150;display:inline-block;line-height:0}" +
   ".sp-support-btn img{height:60px;display:block;border-radius:999px}" +
+  ".sp-support-btn.sp-support-hidden{display:none}" +
 
   ".fade-in{animation:fadeIn .3s ease}" +
   "@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}" +
@@ -488,6 +489,8 @@ var CSS =
   ".card-header{margin:-16px -16px 0 -16px;padding:16px 16px 0 16px}" +
   ".card-body{padding-top:14px}" +
   ".sp-config{padding:var(--gap)}" +
+  "#sp-settings .sp-config{padding-bottom:6px}" +
+  "#sp-settings .sp-apply-bar{padding-top:6px;padding-bottom:max(var(--gap),env(safe-area-inset-bottom))}" +
   "}" +
 
   "@media(max-width:480px){" +
@@ -495,7 +498,20 @@ var CSS =
   ".sp-header{padding:0 10px}" +
   ".sp-tab{padding:0 10px;font-size:.75rem}" +
   ".sp-tab-docs{margin-left:2px;padding-left:16px;gap:4px}" +
+  ".sp-settings-status-header{margin:28px 2px 12px}" +
+  ".sp-config>.sp-settings-status-header:first-child{margin-top:12px}" +
+  ".card{border-radius:10px;margin-bottom:10px}" +
+  ".card-header{min-height:56px;box-sizing:border-box}" +
+  ".sp-field{margin-bottom:22px}" +
+  ".sp-toggle-row{gap:16px}" +
+  ".sp-toggle-row span{min-width:0;line-height:1.35}" +
+  ".sp-range-row{gap:10px}" +
+  ".sp-action-btn{padding:10px 14px}" +
+  ".sp-btn-row{flex-wrap:wrap}" +
+  ".sp-btn-row--save,.sp-btn-row--save.sp-has-delete{justify-content:flex-start}" +
+  ".sp-btn-group-right{margin-left:auto}" +
   ".sp-color-row{flex-wrap:wrap}" +
   ".sp-backup-btns{flex-direction:column}" +
   ".sp-fw-row{flex-direction:column;align-items:flex-start;gap:12px}" +
+  ".sp-fw-actions{width:100%;margin-left:0;justify-content:flex-start;flex-wrap:wrap}" +
   "}";

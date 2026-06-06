@@ -298,6 +298,73 @@ async function assertSettingsPage(page, label, options = {}) {
   await page.waitForSelector("#sp-screen.sp-page.active");
 }
 
+async function assertMobileTabLayout(page, label, restoreViewport) {
+  await page.setViewportSize({ width: 360, height: 740 });
+  await page.waitForTimeout(100);
+  await page.getByRole("tab", { name: "Screen" }).click();
+  await page.waitForSelector("#sp-screen.sp-page.active");
+  let mobile = await page.evaluate(() => {
+    var support = document.querySelector(".sp-support-btn");
+    var supportStyle = support ? getComputedStyle(support) : null;
+    var screen = document.querySelector(".sp-screen").getBoundingClientRect();
+    return {
+      tab: document.querySelector("#sp-app").getAttribute("data-active-tab"),
+      supportVisible: !!support && supportStyle.display !== "none" && support.getBoundingClientRect().width > 1,
+      screenWidth: screen.width,
+      documentScrollWidth: document.documentElement.scrollWidth,
+      windowWidth: window.innerWidth,
+    };
+  });
+  assert.strictEqual(mobile.tab, "screen", `${label}: screen tab is marked active on mobile`);
+  assert(mobile.supportVisible, `${label}: support button remains visible on the screen tab`);
+  assert(mobile.screenWidth <= mobile.windowWidth + 1, `${label}: mobile screen preview fits viewport`);
+  assert(
+    mobile.documentScrollWidth <= mobile.windowWidth + 1,
+    `${label}: mobile screen tab has horizontal overflow`
+  );
+
+  await page.getByRole("tab", { name: "Settings" }).click();
+  await page.waitForSelector("#sp-settings.sp-page.active");
+  const nightScheduleCard = page.locator("#sp-settings .card").filter({ hasText: "Night Schedule" }).first();
+  await nightScheduleCard.locator(".card-header").click();
+  mobile = await page.evaluate(() => {
+    var support = document.querySelector(".sp-support-btn");
+    var supportStyle = support ? getComputedStyle(support) : null;
+    var activeCard = Array.from(document.querySelectorAll("#sp-settings .card")).find(function (card) {
+      return !card.classList.contains("collapsed");
+    });
+    var activeCardRect = activeCard ? activeCard.getBoundingClientRect() : null;
+    var headers = Array.from(document.querySelectorAll("#sp-settings .card-header")).map(function (header) {
+      var rect = header.getBoundingClientRect();
+      return { width: rect.width, left: rect.left, right: rect.right };
+    });
+    return {
+      tab: document.querySelector("#sp-app").getAttribute("data-active-tab"),
+      supportVisible: !!support && supportStyle.display !== "none" && support.getBoundingClientRect().width > 1,
+      activeCardVisible: !!activeCardRect && activeCardRect.width > 1 && activeCardRect.height > 1,
+      activeCardWithinViewport: !!activeCardRect && activeCardRect.left >= -1 && activeCardRect.right <= window.innerWidth + 1,
+      headersWithinViewport: headers.every(function (rect) {
+        return rect.left >= -1 && rect.right <= window.innerWidth + 1;
+      }),
+      documentScrollWidth: document.documentElement.scrollWidth,
+      windowWidth: window.innerWidth,
+    };
+  });
+  assert.strictEqual(mobile.tab, "settings", `${label}: settings tab is marked active on mobile`);
+  assert.strictEqual(mobile.supportVisible, false, `${label}: support button should not cover mobile settings`);
+  assert(mobile.activeCardVisible, `${label}: expanded mobile settings card should be visible`);
+  assert(mobile.activeCardWithinViewport, `${label}: expanded mobile settings card should fit viewport`);
+  assert(mobile.headersWithinViewport, `${label}: mobile settings headers should fit viewport`);
+  assert(
+    mobile.documentScrollWidth <= mobile.windowWidth + 1,
+    `${label}: mobile settings tab has horizontal overflow`
+  );
+  await page.setViewportSize(restoreViewport);
+  await page.getByRole("tab", { name: "Screen" }).click();
+  await page.waitForSelector("#sp-screen.sp-page.active");
+  await page.waitForTimeout(100);
+}
+
 async function assertEmptyCellSettings(page, posts, label) {
   const emptyCell = page.locator(".sp-empty-cell:not(.sp-info-only-hidden)").first();
   if ((await emptyCell.count()) === 0) return;
@@ -884,6 +951,9 @@ async function runCase(browser, testCase) {
     assertNoLayoutBreaks(await measureCoreLayout(page), testCase.name, testCase);
     await assertSettingsPage(page, testCase.name, testCase);
     assertNoLayoutBreaks(await measureCoreLayout(page), `${testCase.name} after settings`, testCase);
+    if (testCase.exerciseInteractions) {
+      await assertMobileTabLayout(page, testCase.name, testCase.viewport);
+    }
     await assertEmptyCellSettings(page, posts, testCase.name);
     if (testCase.exerciseInteractions) {
       await assertClockBarEditorSmoke(page, posts, testCase.name);

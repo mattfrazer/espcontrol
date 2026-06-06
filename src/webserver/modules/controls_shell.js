@@ -176,12 +176,19 @@ function buildApplyBar() {
 
 function switchTab(tab) {
   state.activeTab = tab;
+  if (els.root) els.root.setAttribute("data-active-tab", tab);
   ["screen", "settings"].forEach(function (t) {
     els["tab_" + t].className = "sp-tab" + (tab === t ? " active" : "");
     els["tab_" + t].setAttribute("aria-selected", tab === t ? "true" : "false");
   });
   els.screenPage.className = "sp-page" + (tab === "screen" ? " active" : "");
   els.settingsPage.className = "sp-page" + (tab === "settings" ? " active" : "");
+  syncTabChrome();
+}
+
+function syncTabChrome() {
+  var support = document.querySelector(".sp-support-btn");
+  if (support) support.classList.toggle("sp-support-hidden", state.activeTab === "settings");
 }
 
 function isConfigLocked() {

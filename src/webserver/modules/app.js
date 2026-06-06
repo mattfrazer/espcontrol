@@ -19,6 +19,7 @@ function addSupportButton() {
   link.rel = "noopener";
   link.innerHTML = '<img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="60" style="border-radius:999px;">';
   document.body.appendChild(link);
+  syncTabChrome();
 }
 
 function init() {
