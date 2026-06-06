@@ -273,7 +273,8 @@ registerButtonType("", {
     var preview = {
       labelHtml: cardBadgeLabelHtml(helpers, label, badgeIcon),
     };
-    if (b.sensor && b.precision !== "text" && cardLargeNumbersEnabled(b)) {
+    if (b.sensor && b.precision !== "text" &&
+        cardLargeNumbersActiveForCardSize(b, helpers, SWITCH_CARD_METADATA)) {
       preview.iconHtml = cardSensorPreviewHtml(b, helpers, "42", b.unit || "");
     }
     return preview;

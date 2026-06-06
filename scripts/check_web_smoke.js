@@ -241,7 +241,7 @@ assert.strictEqual(climatePreviewC.buttonClass, "sp-climate-temp-card", "climate
 assert(climatePreviewC.iconHtml.includes("\u00b0C"), "climate preview uses Celsius unit");
 const climateLargePreview = hooks.buttonTypePreviewFor("climate", {
   ...climatePreviewButton,
-  options: "large_numbers",
+  options: "",
 }, {
   cardSize: 4,
   temperatureUnit: "\u00b0C",
@@ -302,21 +302,21 @@ assert.strictEqual(hooks.dateTimeLargeNumbersLabel({ type: "timezone" }), "Large
 const largeDatePreview = hooks.buttonTypePreviewFor("calendar", {
   type: "calendar",
   precision: "",
-  options: "large_numbers",
+  options: "",
 }, {
   cardSize: 4,
 });
-assert(largeDatePreview.iconHtml.includes("sp-sensor-preview-large"), "date 2x2 preview supports large numbers");
+assert(largeDatePreview.iconHtml.includes("sp-sensor-preview-large"), "date 2x2 preview defaults to large numbers");
 
 const dateTimePreview = hooks.buttonTypePreviewFor("calendar", {
   type: "calendar",
   precision: "datetime",
-  options: "large_numbers",
+  options: "",
 }, {
   cardSize: 4,
   clockFormat: "24h",
 });
-assert(dateTimePreview.iconHtml.includes("sp-sensor-preview-large"), "date/time preview supports large numbers");
+assert(dateTimePreview.iconHtml.includes("sp-sensor-preview-large"), "date/time 2x2 preview defaults to large numbers");
 assert(previewSensorValue(dateTimePreview).includes(":"), "date/time preview renders a time value");
 
 const wideDateTimePreview = hooks.buttonTypePreviewFor("calendar", {
@@ -333,13 +333,13 @@ assert(wideDateTimePreview.labelHtml.includes("mdi-calendar-month"), "date/time 
 
 const clockPreview = hooks.buttonTypePreviewFor("clock", {
   type: "clock",
-  options: "large_numbers",
+  options: "",
 }, {
   cardSize: 4,
   clockFormat: "24h",
 });
 assert(previewSensorValue(clockPreview).includes(":"), "clock preview renders a time value");
-assert(clockPreview.iconHtml.includes("sp-sensor-preview-large"), "clock 2x2 preview supports large numbers");
+assert(clockPreview.iconHtml.includes("sp-sensor-preview-large"), "clock 2x2 preview defaults to large numbers");
 assert.strictEqual(clockPreview.labelHtml, "", "clock preview does not render a date label");
 assert.strictEqual(clockPreview.buttonClass, undefined, "clock 2x2 preview uses the standard wrapper");
 
@@ -412,7 +412,7 @@ const weatherForecastPreview = hooks.buttonTypePreviewFor("weather", {
   label: "Garden",
   type: "weather",
   precision: "today",
-  options: "large_numbers",
+  options: "",
 }, {
   cardSize: 4,
   temperatureUnit: "\u00b0F",
@@ -428,9 +428,9 @@ const sensorNumericPreview = hooks.buttonTypePreviewFor("sensor", {
   unit: "\u00b0C",
   type: "sensor",
   precision: "1",
-  options: "large_numbers",
+  options: "",
 }, { cardSize: 4 });
-assert(sensorNumericPreview.iconHtml.includes("sp-sensor-preview-large"), "sensor numeric preview supports large numbers");
+assert(sensorNumericPreview.iconHtml.includes("sp-sensor-preview-large"), "sensor numeric 2x2 preview defaults to large numbers");
 assert(sensorNumericPreview.labelHtml.includes("mdi-gauge"), "sensor numeric preview uses the gauge badge");
 assert(sensorNumericPreview.iconHtml.includes("\u00b0C"), "sensor numeric preview includes the unit");
 
@@ -507,9 +507,9 @@ const actionLargePreview = hooks.buttonTypePreviewFor("action", {
   icon: "Flash",
   sensor: "script.turn_on",
   type: "action",
-  options: "state_entity=sensor.kitchen_power,state_unit=W,state_precision=1,large_numbers",
+  options: "state_entity=sensor.kitchen_power,state_unit=W,state_precision=1",
 }, { cardSize: 4 });
-assert(actionLargePreview.iconHtml.includes("sp-sensor-preview-large"), "action numeric state preview supports large numbers");
+assert(actionLargePreview.iconHtml.includes("sp-sensor-preview-large"), "action numeric state 2x2 preview defaults to large numbers");
 
 const actionIconStatePreview = hooks.buttonTypePreviewFor("action", {
   entity: "script.goodnight",
@@ -578,9 +578,9 @@ const switchLargePreview = hooks.buttonTypePreviewFor("", {
   label: "Washer",
   sensor: "sensor.washer_power",
   unit: "W",
-  options: "large_numbers",
+  options: "",
 }, { cardSize: 4 });
-assert(switchLargePreview.iconHtml.includes("sp-sensor-preview-large"), "switch numeric active display preview supports large numbers");
+assert(switchLargePreview.iconHtml.includes("sp-sensor-preview-large"), "switch numeric active display 2x2 preview defaults to large numbers");
 
 const switchTextPreview = hooks.buttonTypePreviewFor("", {
   entity: "switch.washing_machine",
@@ -840,9 +840,9 @@ const subpageLargePreview = hooks.buttonTypePreviewFor("subpage", {
   sensor: "sensor.open_windows",
   unit: "%",
   type: "subpage",
-  options: "large_numbers",
+  options: "",
 }, { cardSize: 4 });
-assert(subpageLargePreview.iconHtml.includes("sp-sensor-preview-large"), "subpage numeric preview supports large numbers");
+assert(subpageLargePreview.iconHtml.includes("sp-sensor-preview-large"), "subpage numeric 2x2 preview defaults to large numbers");
 
 const subpageTextPreview = hooks.buttonTypePreviewFor("subpage", {
   label: "Washer",
@@ -868,18 +868,18 @@ const mediaVolumeLargePreview = hooks.buttonTypePreviewFor("media", {
   label: "Kitchen",
   sensor: "volume",
   type: "media",
-  options: "large_numbers",
+  options: "",
 }, { cardSize: 4 });
-assert(mediaVolumeLargePreview.iconHtml.includes("sp-sensor-preview-large"), "media volume preview supports large numbers");
+assert(mediaVolumeLargePreview.iconHtml.includes("sp-sensor-preview-large"), "media volume 2x2 preview defaults to large numbers");
 
 const mediaPositionLargePreview = hooks.buttonTypePreviewFor("media", {
   entity: "media_player.office",
   label: "Office",
   sensor: "position",
   type: "media",
-  options: "large_numbers",
+  options: "",
 }, { cardSize: 4 });
-assert(mediaPositionLargePreview.iconHtml.includes("sp-sensor-preview-large"), "media position preview supports large numbers");
+assert(mediaPositionLargePreview.iconHtml.includes("sp-sensor-preview-large"), "media position 2x2 preview defaults to large numbers");
 
 const mediaNowPlayingPreview = hooks.buttonTypePreviewFor("media", {
   entity: "media_player.office",

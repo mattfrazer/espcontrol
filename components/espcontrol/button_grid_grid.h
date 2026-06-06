@@ -140,6 +140,12 @@ inline bool card_large_date_time_layout(const ParsedCfg &p, int row_span, int co
   return large_number_square_card_layout(row_span, col_span);
 }
 
+inline bool card_large_numbers_active_for_layout(const ParsedCfg &p, int row_span, int col_span) {
+  return card_large_numbers_supported(p) && (
+    large_number_square_card_layout(row_span, col_span) ||
+    card_large_numbers_enabled(p));
+}
+
 inline bool wide_large_date_time_card_layout(int row_span, int col_span) {
   return row_span == 1 && col_span == 2;
 }
@@ -237,7 +243,8 @@ inline void setup_card_visual(BtnSlot &s, const ParsedCfg &p,
     if (p.sensor.empty()) return;
     setup_sensor_card(s, p, palette.has_sensor_color, palette.sensor_val);
     if (large_number_square_card_layout(row_span, col_span) &&
-        sensor_large_numbers_enabled(p) && display_large_sensor_font(display)) {
+        card_large_numbers_active_for_layout(p, row_span, col_span) &&
+        display_large_sensor_font(display)) {
       apply_large_sensor_number_style(
         s, display_large_sensor_font(display), display_large_sensor_unit_offset_percent(display));
     }
@@ -256,7 +263,8 @@ inline void setup_card_visual(BtnSlot &s, const ParsedCfg &p,
   if (p.type == "calendar") {
     setup_calendar_card(s, p, palette.has_sensor_color, palette.sensor_val);
     if (card_large_date_time_layout(p, row_span, col_span) &&
-        card_large_numbers_enabled(p) && display_large_sensor_font(display)) {
+        card_large_numbers_active_for_layout(p, row_span, col_span) &&
+        display_large_sensor_font(display)) {
       apply_large_sensor_number_style(
         s, display_large_sensor_font(display), display_large_sensor_unit_offset_percent(display));
       if (wide_large_date_time_card_layout(row_span, col_span)) {
@@ -268,7 +276,8 @@ inline void setup_card_visual(BtnSlot &s, const ParsedCfg &p,
   if (p.type == "clock") {
     setup_clock_card(s, p, palette.has_sensor_color, palette.sensor_val);
     if (card_large_date_time_layout(p, row_span, col_span) &&
-        card_large_numbers_enabled(p) && display_large_sensor_font(display)) {
+        card_large_numbers_active_for_layout(p, row_span, col_span) &&
+        display_large_sensor_font(display)) {
       apply_large_sensor_number_style(
         s, display_large_sensor_font(display), display_large_sensor_unit_offset_percent(display));
       if (wide_large_date_time_card_layout(row_span, col_span)) {
@@ -280,7 +289,8 @@ inline void setup_card_visual(BtnSlot &s, const ParsedCfg &p,
   if (p.type == "timezone") {
     setup_timezone_card(s, p, palette.has_sensor_color, palette.sensor_val);
     if (card_large_date_time_layout(p, row_span, col_span) &&
-        card_large_numbers_enabled(p) && display_large_sensor_font(display)) {
+        card_large_numbers_active_for_layout(p, row_span, col_span) &&
+        display_large_sensor_font(display)) {
       apply_large_sensor_number_style(
         s, display_large_sensor_font(display), display_large_sensor_unit_offset_percent(display));
       if (wide_large_date_time_card_layout(row_span, col_span)) {
@@ -293,7 +303,8 @@ inline void setup_card_visual(BtnSlot &s, const ParsedCfg &p,
     setup_weather_forecast_card(s, p, palette.has_sensor_color, palette.sensor_val,
       display_main_width_percent(display));
     if (large_number_square_card_layout(row_span, col_span) &&
-        card_large_numbers_enabled(p) && display_large_sensor_font(display)) {
+        card_large_numbers_active_for_layout(p, row_span, col_span) &&
+        display_large_sensor_font(display)) {
       apply_large_sensor_number_style(
         s, display_large_sensor_font(display), display_large_sensor_unit_offset_percent(display));
     }
@@ -363,7 +374,8 @@ inline void setup_card_visual(BtnSlot &s, const ParsedCfg &p,
   if (p.type == "todo") {
     setup_todo_card(s, p, palette.off_val);
     if (large_number_square_card_layout(row_span, col_span) &&
-        card_large_numbers_enabled(p) && display_large_sensor_font(display)) {
+        card_large_numbers_active_for_layout(p, row_span, col_span) &&
+        display_large_sensor_font(display)) {
       apply_large_sensor_number_style(
         s, display_large_sensor_font(display), display_large_sensor_unit_offset_percent(display));
     }
@@ -1018,7 +1030,8 @@ inline void grid_phase2(
           has_on ? on_val : DEFAULT_SLIDER_COLOR,
           has_off ? off_val : DEFAULT_OFF_COLOR,
           large_number_square_card_layout(row_span, col_span) &&
-              card_large_numbers_enabled(p) && display_large_sensor_font(display)
+              card_large_numbers_active_for_layout(p, row_span, col_span) &&
+              display_large_sensor_font(display)
             ? display_large_sensor_font(display) : display_sensor_font(display),
           lv_obj_get_style_text_font(s.text_lbl, LV_PART_MAIN),
           display_media_title_font_or(
@@ -1555,7 +1568,8 @@ inline void grid_phase2(
             has_on ? on_val : DEFAULT_SLIDER_COLOR,
             has_off ? off_val : DEFAULT_OFF_COLOR,
             large_number_square_card_layout(rs, cs) &&
-                card_large_numbers_enabled(sb_cfg) && display_large_sensor_font(display)
+                card_large_numbers_active_for_layout(sb_cfg, rs, cs) &&
+                display_large_sensor_font(display)
               ? display_large_sensor_font(display) : display_sensor_font(display),
             lv_obj_get_style_text_font(sub_slot.text_lbl, LV_PART_MAIN),
             display_media_title_font_or(

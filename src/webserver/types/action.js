@@ -337,7 +337,8 @@ registerButtonType("action", {
       };
     }
     var iconName = b.icon && b.icon !== "Auto" ? iconSlug(b.icon) : "flash";
-    if (actionCardStateEntity(b) && actionCardStateDisplayMode(b) === "numeric" && cardLargeNumbersEnabled(b)) {
+    if (actionCardStateEntity(b) && actionCardStateDisplayMode(b) === "numeric" &&
+        cardLargeNumbersActiveForCardSize(b, helpers, ACTION_CARD_METADATA)) {
       return {
         iconHtml: cardSensorPreviewHtml(b, helpers, "42", actionCardStateUnit(b) || ""),
         labelHtml: cardBadgeLabelHtml(helpers, label, ACTION_CARD_METADATA.preview.actionBadge),

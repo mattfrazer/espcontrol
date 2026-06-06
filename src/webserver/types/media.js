@@ -371,7 +371,7 @@ registerButtonType("media", {
       var progressColor = "444444";
       var positionLabel = b.precision === "state" ? "Paused" : label;
       var positionClass = "sp-sensor-preview sp-media-position-time" +
-        (cardLargeNumbersEnabled(b) ? " sp-sensor-preview-large" : "");
+        (cardLargeNumbersActiveForCardSize(b, helpers, MEDIA_CARD_METADATA) ? " sp-sensor-preview-large" : "");
       return {
         iconHtml:
           '<span class="sp-slider-preview" style="inset:-2px;background:#' + helpers.escHtml(bgColor) + '">' +
