@@ -725,6 +725,10 @@ def firmware_image_card_startup_errors(
         errors.append(f"{rel}: arm image-card refresh from the Home Assistant API connection")
     if "if (!ha_api_state_connected())" not in text:
         errors.append(f"{rel}: wait for Home Assistant state subscription before requesting image attributes")
+    if "subscribe_image_card_entity_state" not in text or "ha_subscribe_state(" not in text:
+        errors.append(f"{rel}: refresh image cards when the camera/image entity state changes")
+    if "image_card_context_current" not in text or "generation == ha_subscription_generation()" not in text:
+        errors.append(f"{rel}: ignore stale image-card callbacks after grid rebuild")
     if "image_card_high_quality_request_size(width, height" not in text:
         errors.append(f"{rel}: request high-quality Home Assistant image card source downloads")
     if "image_card_sized_url(ctx->source_url, request_width, request_height)" not in text:
@@ -2290,6 +2294,8 @@ def run_self_test() -> int:
             "retry image-card startup quickly after Home Assistant API connects",
             "arm image-card refresh from the Home Assistant API connection",
             "wait for Home Assistant state subscription before requesting image attributes",
+            "refresh image cards when the camera/image entity state changes",
+            "ignore stale image-card callbacks after grid rebuild",
             "request high-quality Home Assistant image card source downloads",
             "request bounded Home Assistant image card proxy downloads",
             "recognize Home Assistant camera and image proxy URLs",
@@ -2306,6 +2312,15 @@ def run_self_test() -> int:
         "}\n"
         "inline void image_card_request_picture(ImageCardCtx *ctx) {\n"
         "  if (!ha_api_state_connected()) return;\n"
+        "}\n"
+        "inline bool image_card_context_current(ImageCardCtx *ctx,\n"
+        "                                       const std::string &entity_id,\n"
+        "                                       uint32_t generation) {\n"
+        "  return generation == ha_subscription_generation();\n"
+        "}\n"
+        "inline void subscribe_image_card_entity_state(ImageCardCtx *ctx,\n"
+        "                                              const std::string &entity_id) {\n"
+        "  ha_subscribe_state(entity_id, callback);\n"
         "}\n"
         "inline void image_card_request_source_url(ImageCardCtx *ctx) {\n"
         "  image_card_high_quality_request_size(width, height, &request_width, &request_height);\n"

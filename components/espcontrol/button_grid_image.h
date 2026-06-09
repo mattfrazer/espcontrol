@@ -884,6 +884,9 @@ inline std::string image_card_sized_url(const std::string &url,
 }
 
 inline void image_card_handle_picture(ImageCardCtx *ctx, esphome::StringRef picture);
+inline bool image_card_context_current(ImageCardCtx *ctx,
+                                       const std::string &entity_id,
+                                       uint32_t generation);
 
 inline void image_card_schedule_picture_retry(ImageCardCtx *ctx, uint32_t delay_ms) {
   if (!ctx || !ctx->active) return;
@@ -901,11 +904,14 @@ inline void image_card_request_picture(ImageCardCtx *ctx) {
     }
     return;
   }
+  const std::string entity_id = ctx->entity_id;
+  const uint32_t generation = ha_subscription_generation();
   bool requested = ha_get_attribute(
-    ctx->entity_id,
+    entity_id,
     std::string("entity_picture"),
     std::function<void(esphome::StringRef)>(
-      [ctx](esphome::StringRef picture) {
+      [ctx, entity_id, generation](esphome::StringRef picture) {
+        if (!image_card_context_current(ctx, entity_id, generation)) return;
         image_card_handle_picture(ctx, picture);
       })
   );
@@ -914,6 +920,43 @@ inline void image_card_request_picture(ImageCardCtx *ctx) {
       ctx,
       ha_api_connected() ? IMAGE_CARD_API_RETRY_INTERVAL_MS : IMAGE_CARD_RETRY_INTERVAL_MS);
   }
+}
+
+inline bool image_card_context_current(ImageCardCtx *ctx,
+                                       const std::string &entity_id,
+                                       uint32_t generation) {
+  return ctx && ctx->active &&
+         generation == ha_subscription_generation() &&
+         ctx->entity_id == entity_id;
+}
+
+inline void subscribe_image_card_picture_attribute(ImageCardCtx *ctx,
+                                                   const std::string &entity_id) {
+  if (!ctx || entity_id.empty()) return;
+  const uint32_t generation = ha_subscription_generation();
+  ha_subscribe_attribute(
+    entity_id,
+    std::string("entity_picture"),
+    std::function<void(esphome::StringRef)>(
+      [ctx, entity_id, generation](esphome::StringRef picture) {
+        if (!image_card_context_current(ctx, entity_id, generation)) return;
+        image_card_handle_picture(ctx, picture);
+      })
+  );
+}
+
+inline void subscribe_image_card_entity_state(ImageCardCtx *ctx,
+                                              const std::string &entity_id) {
+  if (!ctx || entity_id.empty()) return;
+  const uint32_t generation = ha_subscription_generation();
+  ha_subscribe_state(
+    entity_id,
+    std::function<void(esphome::StringRef)>(
+      [ctx, entity_id, generation](esphome::StringRef) {
+        if (!image_card_context_current(ctx, entity_id, generation)) return;
+        image_card_request_picture(ctx);
+      })
+  );
 }
 
 inline void image_card_schedule_next_refresh(ImageCardCtx *ctx, uint32_t now = esphome::millis()) {
@@ -1302,14 +1345,8 @@ inline bool bind_image_card(BtnSlot &s, const ParsedCfg &p, const GridConfig &cf
     }, LV_EVENT_CLICKED, ctx);
   }
 
-  ha_subscribe_attribute(
-    p.entity,
-    std::string("entity_picture"),
-    std::function<void(esphome::StringRef)>(
-      [ctx](esphome::StringRef picture) {
-        image_card_handle_picture(ctx, picture);
-      })
-  );
+  subscribe_image_card_picture_attribute(ctx, p.entity);
+  subscribe_image_card_entity_state(ctx, p.entity);
   image_card_request_picture(ctx);
   return true;
 }
