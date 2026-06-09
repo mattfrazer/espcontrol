@@ -59,9 +59,9 @@ def package_substitution_lines(device: dict) -> list[str]:
 def cover_art_substitution_lines(device: dict) -> list[str]:
     layouts = {
         "guition-esp32-s3-4848s040": {
-            "cover_art_size": "480",
-            "cover_art_x": "0",
-            "cover_art_y": "0",
+            "cover_art_size": "320",
+            "cover_art_x": "80",
+            "cover_art_y": "80",
             "cover_art_accent_x": "0",
             "cover_art_accent_y": "0",
             "cover_art_accent_width": "480",
