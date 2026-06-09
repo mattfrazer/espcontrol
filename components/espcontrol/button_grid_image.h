@@ -323,14 +323,18 @@ inline bool image_card_memory_available(ImageCardCtx *ctx, const char *stage,
 #ifdef ESP_PLATFORM
   size_t image_bytes = image_card_estimated_buffer_bytes(width, height);
   size_t needed_free = image_bytes + IMAGE_CARD_MEMORY_HEADROOM_BYTES;
-  size_t heap_free = heap_caps_get_free_size(MALLOC_CAP_8BIT);
-  size_t heap_largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+  size_t internal_free = heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL);
+  size_t internal_largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL);
+  size_t external_free = heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
+  size_t external_largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
+  size_t heap_free = internal_free + external_free;
+  size_t heap_largest = std::max(internal_largest, external_largest);
   if (image_bytes > 0 && (heap_free < needed_free || heap_largest < image_bytes)) {
     ESP_LOGW("image_card",
-             "Skipping %s image refresh for %s: need=%u largest=%u free=%u target=%dx%d",
+             "Skipping %s image refresh for %s: need=%u largest=%u free=%u internal=%u psram=%u target=%dx%d",
              stage ? stage : "camera", ctx ? ctx->entity_id.c_str() : "(unknown)",
              (unsigned) needed_free, (unsigned) heap_largest, (unsigned) heap_free,
-             width, height);
+             (unsigned) internal_free, (unsigned) external_free, width, height);
     return false;
   }
 #else

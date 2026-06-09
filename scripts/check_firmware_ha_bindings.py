@@ -664,6 +664,8 @@ def firmware_image_card_quality_errors(firmware_dir: Path, root: Path) -> list[s
         errors.append(f"{rel}: scale image card modal downloads to a display-appropriate size")
     if "image_card_memory_available" not in text or "IMAGE_CARD_MEMORY_HEADROOM_BYTES" not in text:
         errors.append(f"{rel}: check free memory before image-card downloads")
+    if "MALLOC_CAP_SPIRAM" not in text or "external_largest" not in text:
+        errors.append(f"{rel}: include PSRAM in image-card memory checks")
     if "ctx->image->cancel_update();" not in text:
         errors.append(f"{rel}: cancel in-flight image downloads before opening image card modals")
     if "Deferring image refresh while modal is open" not in text:
@@ -2223,6 +2225,7 @@ def run_self_test() -> int:
             "release modal image-card buffers when the modal closes",
             "support six concurrent image cards on P4 displays",
             "check free memory before image-card downloads",
+            "include PSRAM in image-card memory checks",
             "show a visible image-card limit message when downloaders run out",
             "avoid extra modal image downloads on the 4.3-inch P4 screen",
             "log image-card modal close events",
@@ -2241,7 +2244,10 @@ def run_self_test() -> int:
         "inline lv_style_selector_t image_card_pressed_selector() { return LV_STATE_PRESSED; }\n"
         "inline void image_card_apply_corner_clip(lv_obj_t *obj, lv_coord_t radius) {}\n"
         "inline bool image_card_memory_available(ImageCardCtx *ctx, const char *stage,\n"
-        "                                        int width, int height) { return true; }\n"
+        "                                        int width, int height) {\n"
+        "  size_t external_largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);\n"
+        "  return external_largest > 0;\n"
+        "}\n"
         "inline bool image_card_modal_refresh_supported() {\n"
         "  return !control_modal_current_is_jc4880p443_size();\n"
         "}\n"
