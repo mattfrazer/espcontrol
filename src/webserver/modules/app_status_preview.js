@@ -243,23 +243,6 @@ function normalizeClockBarLayout() {
   return next;
 }
 
-function moveClockBarItem(item, section) {
-  normalizeClockBarLayout();
-  updateClockBarItemUi();
-}
-
-function removeClockBarItemFromLayout(item) {
-  normalizeClockBarLayout();
-}
-
-function removeClockBarTemperatureItemFromLayout(index) {
-  normalizeClockBarLayout();
-}
-
-function clockBarItemsAvailableToAdd(section) {
-  return [];
-}
-
 function createClockBarItemElement(item, section) {
   var button = document.createElement("div");
   button.className = "sp-clockbar-item sp-clockbar-" + (isClockBarTemperatureItem(item) ? "temperature" : item);
@@ -346,18 +329,6 @@ function setClockBarItemSelected(item, open) {
   updateClockBarItemUi();
   renderPreview();
   renderButtonSettings(!!open);
-}
-
-function addClockBarItem(item) {
-  normalizeClockBarLayout();
-  updateClockBarItemUi();
-}
-
-function deleteClockBarItem(item) {
-  state.clockBarSelectedItem = "";
-  hideSettingsOverlay();
-  updateClockBarItemUi();
-  renderPreview();
 }
 
 function syncInput(el, val) {

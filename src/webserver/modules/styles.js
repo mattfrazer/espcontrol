@@ -140,8 +140,10 @@ var CSS =
   ".sp-drag-active .sp-empty-cell:hover{border-color:rgba(255,255,255,.15)}" +
   ".sp-add-pill{display:inline-flex;align-items:center;justify-content:center;min-width:8cqw;" +
   "height:4.6cqw;padding:0 1.8cqw;border-radius:9999px;border:1px solid rgba(255,255,255,.18);" +
-  "background:rgba(255,255,255,.06);box-shadow:var(--shadow-1)}" +
-  ".sp-empty-cell:hover .sp-add-pill{border-color:rgba(168,177,255,.45);background:rgba(92,115,231,.18)}" +
+  "background:rgba(255,255,255,.06);box-shadow:var(--shadow-1);opacity:0;pointer-events:none;" +
+  "transform:scale(.92);transition:opacity .16s,transform .16s,border-color .2s,background-color .2s}" +
+  ".sp-empty-cell:hover .sp-add-pill{border-color:rgba(168,177,255,.45);background:rgba(92,115,231,.18);opacity:1;transform:scale(1)}" +
+  ".sp-drag-active .sp-empty-cell:hover .sp-add-pill{opacity:0;transform:scale(.92)}" +
   ".sp-empty-cell .sp-add-icon{font-size:2.8cqw;color:rgba(255,255,255,.82)}" +
   ".sp-empty-cell.sp-drop-placeholder{border:2px dashed rgba(92,156,245,.5) !important;" +
   "background:rgba(92,156,245,.08) !important;cursor:default;pointer-events:none}" +

@@ -933,14 +933,6 @@ function showEmptySlotMenu(e, pos) {
   positionMenu(ctxMenu, e);
 }
 
-function showClockBarAddMenu(e, section) {
-  hideContextMenu();
-  state.clockBarAddDraft = null;
-  state.clockBarSelectedItem = "";
-  updateClockBarItemUi();
-  renderButtonSettings();
-}
-
 function hideContextMenu() {
   if (ctxMenu && ctxMenu.parentNode) {
     ctxMenu.parentNode.removeChild(ctxMenu);

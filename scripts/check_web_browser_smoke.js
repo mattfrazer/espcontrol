@@ -440,6 +440,16 @@ async function assertMobileDeviceViewport(browser, testCase) {
 async function assertEmptyCellSettings(page, posts, label) {
   const emptyCell = page.locator(".sp-empty-cell:not(.sp-info-only-hidden)").first();
   if ((await emptyCell.count()) === 0) return;
+  assert.strictEqual(await page.locator(".sp-btn .sp-add-pill").count(), 0, `${label}: configured slots do not show add controls`);
+  const addPill = emptyCell.locator(".sp-add-pill");
+  await page.mouse.move(0, 0);
+  assert.strictEqual(
+    await addPill.evaluate((el) => getComputedStyle(el).opacity),
+    "0",
+    `${label}: empty-slot add control is hidden until hover`
+  );
+  await emptyCell.hover();
+  await page.waitForFunction((el) => parseFloat(getComputedStyle(el).opacity) > 0.9, await addPill.elementHandle());
   const pos = await emptyCell.getAttribute("data-pos");
   const before = posts.length;
   await emptyCell.click();
