@@ -165,8 +165,6 @@ function seededEvents() {
     { id: "select-screen__theme", state: "Light", value: "Light", option: ["Light", "Dark"] },
     { id: "switch-screen__clock_bar", state: "ON", value: true },
     { id: "switch-screen__clock_bar_time", state: "ON", value: true },
-    { id: "switch-screen__clock_bar_weather_icon", state: "OFF", value: false },
-    { id: "text-clock_bar_weather_entity", state: "weather.home" },
     { id: "switch-screen__network_status_icon", state: "ON", value: true },
     { id: "switch-indoor_temp_enable", state: "ON", value: true },
     { id: "switch-outdoor_temp_enable", state: "ON", value: true },
@@ -587,8 +585,6 @@ function backupFixture(device, slots) {
       temperature_unit: "°C",
       clock_bar: true,
       clock_bar_time: true,
-      clock_bar_weather_icon: true,
-      clock_bar_weather_entity: "weather.home",
       network_status_icon: true,
       temperature_degree_symbol: true,
       timezone: "Europe/London (GMT+0)",
@@ -696,8 +692,6 @@ async function assertBackupImportSmoke(page, posts, testCase) {
   await waitForPost(posts, { domain: "select", name: "screen__timezone", action: "set", option: "Europe/London (GMT+0)" }, "backup timezone import", before);
   await waitForPost(posts, { domain: "select", name: "screen__language", action: "set", option: "en" }, "backup language import", before);
   await waitForPost(posts, { domain: "switch", name: "screen__clock_bar_time", action: "turn_on" }, "backup clock bar time reset", before);
-  await waitForPost(posts, { domain: "switch", name: "screen__clock_bar_weather_icon", action: "turn_off" }, "backup clock bar weather reset", before);
-  await waitForPost(posts, { domain: "text", name: "Clock Bar: Weather Entity", action: "set", value: "" }, "backup clock bar weather entity reset", before);
   await waitForPost(posts, { domain: "number", name: "Screen: Daytime Brightness", action: "set", value: "88" }, "backup brightness import", before);
   await waitForPost(posts, { domain: "select", name: "screen__rotation", action: "set", option: "90" }, "backup rotation import", before);
 

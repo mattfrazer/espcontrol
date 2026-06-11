@@ -74,8 +74,6 @@ var state = {
   clockBarOn: false,
   _clockBarStateValues: {},
   clockBarTimeOn: true,
-  clockBarWeatherOn: false,
-  clockBarWeatherEntity: "",
   networkStatusOn: true,
   networkTransport: "wifi",
   wifiStrengthPercent: 100,
@@ -722,7 +720,6 @@ function syncClockBarUi() {
   if (els.topbar) els.topbar.className = "sp-topbar" + (visible ? "" : " sp-hidden");
   if (els.setClockBarToggle) els.setClockBarToggle.checked = !!state.clockBarOn;
   if (els.setClockBarTimeToggle) els.setClockBarTimeToggle.checked = !!state.clockBarTimeOn;
-  if (els.setClockBarWeatherToggle) els.setClockBarWeatherToggle.checked = !!state.clockBarWeatherOn;
   if (els.setNetworkStatusToggle) {
     els.setNetworkStatusToggle.checked = !!state.networkStatusOn;
   }

@@ -44,8 +44,6 @@ function exportConfig() {
       clock_bar: state.clockBarOn,
       clock_bar_layout: CLOCK_BAR_FIXED_LAYOUT_STRING,
       clock_bar_time: true,
-      clock_bar_weather_icon: false,
-      clock_bar_weather_entity: "",
       network_status_icon: true,
       temperature_degree_symbol: state.temperatureDegreeSymbolOn,
       subpage_chevron: state.subpageChevronsOn,
@@ -197,8 +195,6 @@ function importConfig() {
         applyClockBarLayoutValue(CLOCK_BAR_FIXED_LAYOUT_STRING);
         postClockBarLayout(CLOCK_BAR_FIXED_LAYOUT_STRING);
         postClockBarTime(true);
-        postClockBarWeatherIcon(false);
-        postText(entityName("clock_bar_weather_entity"), "");
         postNetworkStatusIcon(true);
         postTemperatureDegreeSymbol(importedSettings.temperatureDegreeSymbol);
         postSubpageChevron(importedSettings.subpageChevron);
@@ -263,8 +259,6 @@ function importConfig() {
         state.temperatureUnit = importedTemperatureUnit;
         state.clockBarOn = importedSettings.clockBar;
         state.clockBarTimeOn = true;
-        state.clockBarWeatherOn = false;
-        state.clockBarWeatherEntity = "";
         state.networkStatusOn = true;
         state.temperatureDegreeSymbolOn = importedSettings.temperatureDegreeSymbol;
         state.subpageChevronsOn = importedSettings.subpageChevron;

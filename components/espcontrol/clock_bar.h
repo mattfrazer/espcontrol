@@ -363,15 +363,13 @@ inline void clock_bar_set_widget_hidden(lv_obj_t *obj, bool hidden) {
 inline void hide_clock_bar_top_layer_widgets(lv_obj_t **temperature_labels,
                                              size_t temperature_label_count,
                                              lv_obj_t *display_time,
-                                             lv_obj_t *network_status_button,
-                                             lv_obj_t *weather_icon_container) {
+                                             lv_obj_t *network_status_button) {
   set_clock_bar_temperature_labels(temperature_labels, temperature_label_count);
   for (size_t i = 0; temperature_labels && i < temperature_label_count; i++) {
     clock_bar_set_widget_hidden(temperature_labels[i], true);
   }
   clock_bar_set_widget_hidden(display_time, true);
   clock_bar_set_widget_hidden(network_status_button, true);
-  clock_bar_set_widget_hidden(weather_icon_container, true);
 }
 
 inline void set_clock_bar_temperature_value_count(size_t count) {
@@ -505,8 +503,7 @@ enum ClockBarItemId {
   CLOCK_BAR_ITEM_TEMPERATURE = 0,
   CLOCK_BAR_ITEM_TIME = CLOCK_BAR_TEMPERATURE_SLOT_COUNT,
   CLOCK_BAR_ITEM_NETWORK = CLOCK_BAR_TEMPERATURE_SLOT_COUNT + 1,
-  CLOCK_BAR_ITEM_WEATHER = CLOCK_BAR_TEMPERATURE_SLOT_COUNT + 2,
-  CLOCK_BAR_ITEM_COUNT = CLOCK_BAR_TEMPERATURE_SLOT_COUNT + 3,
+  CLOCK_BAR_ITEM_COUNT = CLOCK_BAR_TEMPERATURE_SLOT_COUNT + 2,
 };
 
 enum ClockBarSectionId {
@@ -772,14 +769,12 @@ inline void align_clock_bar_layout_section(ClockBarLayoutBox *boxes,
 
 inline bool clock_bar_layout_item_visible(int item, size_t temperature_count,
                                           bool time_visible,
-                                          bool network_visible,
-                                          bool weather_visible) {
+                                          bool network_visible) {
   if (clock_bar_item_is_temperature(item)) {
     return (size_t) (item - CLOCK_BAR_ITEM_TEMPERATURE) < temperature_count;
   }
   if (item == CLOCK_BAR_ITEM_TIME) return time_visible;
   if (item == CLOCK_BAR_ITEM_NETWORK) return network_visible;
-  if (item == CLOCK_BAR_ITEM_WEATHER) return weather_visible;
   return false;
 }
 
@@ -811,8 +806,7 @@ inline ClockBarParsedLayout compact_clock_bar_layout(
     const ClockBarParsedLayout &layout,
     size_t temperature_count,
     bool time_visible,
-    bool network_visible,
-    bool weather_visible) {
+    bool network_visible) {
   ClockBarParsedLayout compact;
   clock_bar_clear_layout(compact);
 
@@ -821,7 +815,7 @@ inline ClockBarParsedLayout compact_clock_bar_layout(
       for (int item = 0; item < CLOCK_BAR_ITEM_COUNT; item++) {
         if (layout.section[item] != section || layout.order[item] != order) continue;
         if (!clock_bar_layout_item_visible(
-                item, temperature_count, time_visible, network_visible, weather_visible)) {
+                item, temperature_count, time_visible, network_visible)) {
           continue;
         }
         clock_bar_add_item(compact, section, item);
@@ -836,10 +830,8 @@ inline void apply_clock_bar_layout(const std::string &layout_text,
                                    size_t temperature_label_count,
                                    lv_obj_t *display_time,
                                    lv_obj_t *network_status_button,
-                                   lv_obj_t *weather_icon_container,
                                    bool time_visible,
                                    bool network_visible,
-                                   bool weather_visible,
                                    bool indoor_temperature_visible,
                                    bool outdoor_temperature_visible,
                                    int screen_width,
@@ -858,8 +850,7 @@ inline void apply_clock_bar_layout(const std::string &layout_text,
       clock_bar_visible_temperature_count(indoor_temperature_visible,
                                           outdoor_temperature_visible),
       time_visible,
-      network_visible,
-      weather_visible);
+      network_visible);
   ClockBarLayoutBox boxes[CLOCK_BAR_ITEM_COUNT];
   int box_count = 0;
   for (size_t i = 0; i < temperature_label_count && i < CLOCK_BAR_TEMPERATURE_SLOT_COUNT; i++) {
@@ -871,8 +862,6 @@ inline void apply_clock_bar_layout(const std::string &layout_text,
                            display_time, CLOCK_BAR_ITEM_TIME, label_y, item_gap);
   clock_bar_add_layout_box(boxes, box_count, layout,
                            network_status_button, CLOCK_BAR_ITEM_NETWORK, network_y, item_gap);
-  clock_bar_add_layout_box(boxes, box_count, layout,
-                           weather_icon_container, CLOCK_BAR_ITEM_WEATHER, network_y, item_gap);
 
   int gap = clock_bar_visual_gap_px(visual_gap);
   align_clock_bar_layout_section(boxes, box_count, CLOCK_BAR_SECTION_LEFT,

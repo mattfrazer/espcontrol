@@ -73,10 +73,6 @@ WEATHER_FORECAST_REQUEST_PATTERN = re.compile(
     r"inline\s+void\s+request_weather_forecast_entity\s*\([^)]*\)\s*\{(?P<body>.*?)\n\}",
     re.DOTALL,
 )
-CLOCK_BAR_WEATHER_SUBSCRIPTION_PATTERN = re.compile(
-    r"inline\s+void\s+subscribe_clock_bar_weather_icon\s*\([^)]*\)\s*\{(?P<body>.*?)\n\}",
-    re.DOTALL,
-)
 COVER_COMMAND_REQUEST_PATTERN = re.compile(
     r"inline\s+void\s+send_cover_command_action\s*\([^)]*\)\s*\{(?P<body>.*?)\n\}",
     re.DOTALL,
@@ -475,28 +471,6 @@ def firmware_weather_request_errors(firmware_dir: Path, root: Path) -> list[str]
         or "apply_weather_forecast_actions_required_for_entity" not in body
     ):
         errors.append(f"{rel}: detect Home Assistant forecast timeout errors robustly")
-    return errors
-
-
-def firmware_clock_bar_weather_subscription_errors(firmware_dir: Path, root: Path) -> list[str]:
-    path = firmware_dir / "button_grid_subscriptions.h"
-    if not path.exists():
-        return []
-    rel = path.relative_to(root)
-    text = path.read_text(encoding="utf-8")
-    errors: list[str] = []
-
-    subscription = CLOCK_BAR_WEATHER_SUBSCRIPTION_PATTERN.search(text)
-    if not subscription:
-        errors.append(f"{rel}: missing clock bar weather subscription helper")
-        return errors
-    body = subscription.group("body")
-    if "ha_api_state_connected()" not in body:
-        errors.append(f"{rel}: wait for Home Assistant state readiness before clock bar weather subscription")
-    if "if (!ha_subscribe_state(" not in body or "active.entity_id.clear();" not in body:
-        errors.append(f"{rel}: retry clock bar weather subscription when early subscription fails")
-    if "ha_subscription_generation()" not in body or "current.generation != generation" not in body:
-        errors.append(f"{rel}: ignore stale clock bar weather callbacks after subscription refresh")
     return errors
 
 
@@ -1087,7 +1061,6 @@ def run_scan() -> int:
     errors.extend(firmware_time_reconnect_errors(TIME_ADDON_PATH, ROOT))
     errors.extend(firmware_ntp_startup_errors(TIME_ADDON_PATH, SUN_CALC_PATH, CONNECTIVITY_PATHS, ROOT))
     errors.extend(firmware_weather_request_errors(FIRMWARE_DIR, ROOT))
-    errors.extend(firmware_clock_bar_weather_subscription_errors(FIRMWARE_DIR, ROOT))
     errors.extend(firmware_weather_disconnect_errors(FIRMWARE_DIR, CORE_INFRA_PATH, ROOT))
     errors.extend(firmware_weather_reconnect_errors(CORE_INFRA_PATH, ROOT))
     errors.extend(firmware_unavailable_retry_errors(FIRMWARE_DIR, CORE_INFRA_PATH, ROOT))
@@ -1275,24 +1248,6 @@ def expect_weather_request_errors(name: str, text: str, expected: tuple[str, ...
         (firmware_dir / "button_grid_config.h").write_text(text, encoding="utf-8")
 
         errors = firmware_weather_request_errors(firmware_dir, root)
-        for item in expected:
-            assert any(item in error for error in errors), f"{name}: missing {item!r} in {errors!r}"
-        if not expected:
-            assert not errors, f"{name}: expected no errors, got {errors!r}"
-
-
-def expect_clock_bar_weather_subscription_errors(
-    name: str,
-    text: str,
-    expected: tuple[str, ...],
-) -> None:
-    with TemporaryDirectory() as tmp:
-        root = Path(tmp)
-        firmware_dir = root / "components" / "espcontrol"
-        firmware_dir.mkdir(parents=True)
-        (firmware_dir / "button_grid_subscriptions.h").write_text(text, encoding="utf-8")
-
-        errors = firmware_clock_bar_weather_subscription_errors(firmware_dir, root)
         for item in expected:
             assert any(item in error for error in errors), f"{name}: missing {item!r} in {errors!r}"
         if not expected:
@@ -2125,46 +2080,6 @@ def run_self_test() -> int:
         "}\n",
         ("wait for Home Assistant state subscription",),
     )
-    expect_clock_bar_weather_subscription_errors(
-        "clock bar weather subscribes before state readiness",
-        "inline void subscribe_clock_bar_weather_icon() {\n"
-        "  active_entity = next_entity;\n"
-        "  ha_subscribe_state(next_entity, cb);\n"
-        "}\n",
-        (
-            "wait for Home Assistant state readiness",
-            "retry clock bar weather subscription",
-            "ignore stale clock bar weather callbacks",
-        ),
-    )
-    expect_clock_bar_weather_subscription_errors(
-        "clock bar weather waits for state readiness without stale guard",
-        "inline void subscribe_clock_bar_weather_icon() {\n"
-        "  if (!ha_api_state_connected()) return;\n"
-        "  uint32_t generation = ha_subscription_generation();\n"
-        "  active.entity_id = next_entity;\n"
-        "  if (!ha_subscribe_state(next_entity, cb)) {\n"
-        "    active.entity_id.clear();\n"
-        "    return;\n"
-        "  }\n"
-        "}\n",
-        ("ignore stale clock bar weather callbacks",),
-    )
-    expect_clock_bar_weather_subscription_errors(
-        "clock bar weather waits and ignores stale callbacks",
-        "inline void subscribe_clock_bar_weather_icon() {\n"
-        "  if (!ha_api_state_connected()) return;\n"
-        "  uint32_t generation = ha_subscription_generation();\n"
-        "  active.entity_id = next_entity;\n"
-        "  if (!ha_subscribe_state(next_entity, [generation]() {\n"
-        "    if (current.generation != generation) return;\n"
-        "  })) {\n"
-        "    active.entity_id.clear();\n"
-        "    return;\n"
-        "  }\n"
-        "}\n",
-        (),
-    )
     expect_weather_request_errors(
         "weather callback leak on send failure",
         "inline void request_weather_forecast_entity() {\n"
@@ -2682,14 +2597,14 @@ def run_self_test() -> int:
         "  - id: show_clock_view\n"
         "    then:\n"
         "      - lambda: |-\n"
-        "          hide_clock_bar_top_layer_widgets(nullptr, 0, nullptr, nullptr, nullptr);\n"
+        "          hide_clock_bar_top_layer_widgets(nullptr, 0, nullptr, nullptr);\n"
         "          lv_obj_clear_flag(id(clock_screensaver), LV_OBJ_FLAG_HIDDEN);\n"
         "          lv_obj_move_foreground(id(clock_screensaver));\n"
         "  - id: clock_screensaver_keep_on_top\n"
         "    then:\n"
         "      - lambda: |-\n"
         "          if (!id(is_clock_showing)) return;\n"
-        "          hide_clock_bar_top_layer_widgets(nullptr, 0, nullptr, nullptr, nullptr);\n"
+        "          hide_clock_bar_top_layer_widgets(nullptr, 0, nullptr, nullptr);\n"
         "          refresh_screensaver_fullscreen(id(clock_screensaver), id(dim_screensaver_touch_guard));\n"
         "          lv_obj_move_foreground(id(clock_screensaver));\n"
         "  - id: show_dimmed_view\n"
@@ -2718,14 +2633,14 @@ def run_self_test() -> int:
         "  - id: show_clock_view\n"
         "    then:\n"
         "      - lambda: |-\n"
-        "          hide_clock_bar_top_layer_widgets(nullptr, 0, nullptr, nullptr, nullptr);\n"
+        "          hide_clock_bar_top_layer_widgets(nullptr, 0, nullptr, nullptr);\n"
         "          lv_obj_clear_flag(id(clock_screensaver), LV_OBJ_FLAG_HIDDEN);\n"
         "          lv_obj_move_foreground(id(clock_screensaver));\n"
         "  - id: clock_screensaver_keep_on_top\n"
         "    then:\n"
         "      - lambda: |-\n"
         "          if (!id(is_clock_showing)) return;\n"
-        "          hide_clock_bar_top_layer_widgets(nullptr, 0, nullptr, nullptr, nullptr);\n"
+        "          hide_clock_bar_top_layer_widgets(nullptr, 0, nullptr, nullptr);\n"
         "          refresh_screensaver_fullscreen(id(clock_screensaver), id(dim_screensaver_touch_guard));\n"
         "          lv_obj_move_foreground(id(clock_screensaver));\n"
         "  - id: show_dimmed_view\n"

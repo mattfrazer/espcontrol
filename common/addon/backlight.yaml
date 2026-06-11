@@ -767,8 +767,7 @@ script:
           };
           hide_clock_bar_top_layer_widgets(temperature_labels, 6,
                                            id(display_time),
-                                           id(network_status_button),
-                                           id(clock_bar_weather_icon_container));
+                                           id(network_status_button));
           network_status_hide_modal();
           refresh_screensaver_fullscreen(id(clock_screensaver), id(dim_screensaver_touch_guard));
           lv_obj_clear_flag(id(clock_screensaver), LV_OBJ_FLAG_HIDDEN);
@@ -827,8 +826,7 @@ script:
           };
           hide_clock_bar_top_layer_widgets(temperature_labels, 6,
                                            id(display_time),
-                                           id(network_status_button),
-                                           id(clock_bar_weather_icon_container));
+                                           id(network_status_button));
           network_status_hide_modal();
           refresh_screensaver_fullscreen(id(clock_screensaver), id(dim_screensaver_touch_guard));
           lv_obj_move_foreground(id(clock_screensaver));

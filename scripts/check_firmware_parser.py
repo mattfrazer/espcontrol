@@ -171,13 +171,11 @@ int main() {
   assert(duplicate_clock_bar.order[CLOCK_BAR_ITEM_TIME] == 0);
   assert(duplicate_clock_bar.section[CLOCK_BAR_ITEM_NETWORK] == CLOCK_BAR_SECTION_RIGHT);
   assert(duplicate_clock_bar.order[CLOCK_BAR_ITEM_NETWORK] == 0);
-  assert(duplicate_clock_bar.section[CLOCK_BAR_ITEM_WEATHER] == -1);
 
   auto compact_clock_bar = compact_clock_bar_layout(
-    duplicate_clock_bar, 1, true, false, true);
+    duplicate_clock_bar, 1, true, false);
   assert(compact_clock_bar.section[CLOCK_BAR_ITEM_TEMPERATURE] == CLOCK_BAR_SECTION_LEFT);
   assert(compact_clock_bar.section[CLOCK_BAR_ITEM_NETWORK] == -1);
-  assert(compact_clock_bar.section[CLOCK_BAR_ITEM_WEATHER] == -1);
   assert(compact_clock_bar.count[CLOCK_BAR_SECTION_LEFT] == 1);
   assert(compact_clock_bar.count[CLOCK_BAR_SECTION_RIGHT] == 0);
 
@@ -195,7 +193,6 @@ int main() {
   lv_obj_t temperature_6;
   lv_obj_t display_time;
   lv_obj_t network_status_button;
-  lv_obj_t weather_icon_container;
   lv_obj_t *temperature_labels[] = {
     &temperature_1,
     &temperature_2,
@@ -210,15 +207,14 @@ int main() {
     temperature_labels,
     6,
     &display_time,
-	    &network_status_button,
-	    &weather_icon_container,
-	    true, true, true, true, true,
-	    1024, 12, 17, 20, 10, 80, 10);
+    &network_status_button,
+    true, true, true, true,
+    1024, 12, 17, 20, 10, 80, 10);
   assert(lv_obj_move_background_calls == 3);
   assert(lv_obj_has_flag(&temperature_2, LV_OBJ_FLAG_HIDDEN));
   assert(lv_obj_has_flag(&temperature_6, LV_OBJ_FLAG_HIDDEN));
   hide_clock_bar_top_layer_widgets(
-    temperature_labels, 6, &display_time, &network_status_button, &weather_icon_container);
+    temperature_labels, 6, &display_time, &network_status_button);
   assert(lv_obj_has_flag(&temperature_1, LV_OBJ_FLAG_HIDDEN));
   assert(lv_obj_has_flag(&temperature_2, LV_OBJ_FLAG_HIDDEN));
   assert(lv_obj_has_flag(&temperature_3, LV_OBJ_FLAG_HIDDEN));
@@ -227,7 +223,6 @@ int main() {
   assert(lv_obj_has_flag(&temperature_6, LV_OBJ_FLAG_HIDDEN));
   assert(lv_obj_has_flag(&display_time, LV_OBJ_FLAG_HIDDEN));
   assert(lv_obj_has_flag(&network_status_button, LV_OBJ_FLAG_HIDDEN));
-  assert(lv_obj_has_flag(&weather_icon_container, LV_OBJ_FLAG_HIDDEN));
   set_clock_bar_temperature_value_count(0);
 
   assert(cfg_field("light.kitchen;Kitchen;Auto;Lightbulb", 0) == "light.kitchen");

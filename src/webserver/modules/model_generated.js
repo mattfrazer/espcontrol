@@ -1006,8 +1006,6 @@ var EspControlModel = (() => {
       clockBar: objectValue(settings, "clock_bar") != null ? !!settings.clock_bar : false,
       clockBarLayout: CLOCK_BAR_FIXED_LAYOUT,
       clockBarTime: true,
-      clockBarWeatherIcon: false,
-      clockBarWeatherEntity: "",
       networkStatusIcon: true,
       temperatureDegreeSymbol: objectValue(settings, "temperature_degree_symbol") != null ? !!settings.temperature_degree_symbol : true,
       subpageChevron: objectValue(settings, "subpage_chevron") != null ? !!settings.subpage_chevron : true,

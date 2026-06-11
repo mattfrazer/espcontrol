@@ -231,8 +231,6 @@ export interface BackupPanelSettingsState {
   clockBar: boolean;
   clockBarLayout: string;
   clockBarTime: boolean;
-  clockBarWeatherIcon: boolean;
-  clockBarWeatherEntity: string;
   networkStatusIcon: boolean;
   temperatureDegreeSymbol: boolean;
   subpageChevron: boolean;
@@ -322,8 +320,6 @@ export function normalizeBackupPanelSettings(
     clockBar: objectValue(settings, "clock_bar") != null ? !!settings.clock_bar : false,
     clockBarLayout: CLOCK_BAR_FIXED_LAYOUT,
     clockBarTime: true,
-    clockBarWeatherIcon: false,
-    clockBarWeatherEntity: "",
     networkStatusIcon: true,
     temperatureDegreeSymbol: objectValue(settings, "temperature_degree_symbol") != null
       ? !!settings.temperature_degree_symbol
