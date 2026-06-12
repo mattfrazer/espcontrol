@@ -589,6 +589,19 @@ function buildSettingsPage(parent) {
 
   var coverArtBody = document.createElement("div");
   if (!isEpaperPreview()) {
+    var coverArtInfo = document.createElement("div");
+    coverArtInfo.className = "sp-info-panel";
+    coverArtInfo.id = "sp-cover-art-info";
+    coverArtInfo.setAttribute("role", "note");
+    var coverArtInfoIcon = document.createElement("span");
+    coverArtInfoIcon.className = "mdi mdi-information-outline";
+    coverArtInfoIcon.setAttribute("aria-hidden", "true");
+    var coverArtInfoText = document.createElement("span");
+    coverArtInfoText.textContent = "Media Cover Art overrides existing screensaver settings while the selected media player is playing.";
+    coverArtInfo.appendChild(coverArtInfoIcon);
+    coverArtInfo.appendChild(coverArtInfoText);
+    coverArtBody.appendChild(coverArtInfo);
+
     var coverArtToggle = toggleRow(
       "Show Cover Art",
       "sp-set-ss-cover-art-enable",

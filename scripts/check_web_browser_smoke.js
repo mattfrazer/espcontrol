@@ -287,6 +287,13 @@ async function assertSettingsPage(page, label, options = {}) {
     }).first();
     assert(await coverArtCard.isVisible(), `${label}: media cover art settings card should render`);
     await coverArtCard.locator(".card-header").click();
+    const coverArtInfo = page.locator("#sp-cover-art-info");
+    assert(await coverArtInfo.isVisible(), `${label}: media cover art override info panel should render`);
+    assert.strictEqual(
+      await coverArtInfo.innerText(),
+      "Media Cover Art overrides existing screensaver settings while the selected media player is playing.",
+      `${label}: media cover art override info panel text should match`
+    );
     await coverArtCard.locator("#sp-set-ss-cover-art-enable + .sp-toggle-track").click();
     assert.strictEqual(
       await page.locator("#sp-set-ss-track-overlay").count(),
