@@ -183,6 +183,7 @@ function renderAlarmVisibleActionsField(panel, b, helpers) {
       scheduleRender();
     });
   }
+  syncInputs(visible);
   panel.appendChild(field);
   return field;
 }
