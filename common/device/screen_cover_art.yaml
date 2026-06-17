@@ -529,10 +529,15 @@ script:
                     ? id(cover_art_url)
                     : id(cover_art_active_download_source_url);
                 bool applied_current_url = applied_url == id(cover_art_url);
-                id(cover_art_loaded_url) = applied_url;
+                if (applied_current_url) {
+                  id(cover_art_loaded_url) = id(cover_art_url);
+                  id(cover_art_refresh_needed) = false;
+                } else {
+                  id(cover_art_loaded_url) = applied_url;
+                  id(cover_art_refresh_needed) = true;
+                }
                 id(cover_art_download_url).clear();
                 id(cover_art_active_download_source_url).clear();
-                id(cover_art_refresh_needed) = !applied_current_url;
                 id(cover_art_retry_url) = applied_current_url ? id(cover_art_url) : std::string();
                 id(cover_art_retry_count) = 0;
                 auto *img = id(cover_art_downloaded_image);
@@ -1346,7 +1351,8 @@ script:
             return;
           }
 
-          if (!id(cover_art_url).empty()) {
+          std::string chosen = id(cover_art_url);
+          if (chosen == id(cover_art_url) && !chosen.empty()) {
             ESP_LOGI("cover_art", "Keeping existing artwork URL while waiting for subscription update");
             if (!id(cover_art_image_available) || id(cover_art_refresh_needed)) {
               id(cover_art_deferred_download).execute();
