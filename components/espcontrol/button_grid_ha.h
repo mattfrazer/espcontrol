@@ -69,13 +69,19 @@ inline std::vector<HaDeferredStateRequest> &ha_deferred_state_requests() {
   return requests;
 }
 
+inline void ha_release_deferred_state_request_storage() {
+  std::vector<HaDeferredStateRequest> &requests = ha_deferred_state_requests();
+  if (!requests.empty() || requests.capacity() == 0) return;
+  std::vector<HaDeferredStateRequest>().swap(requests);
+}
+
 inline uint8_t &ha_state_callback_depth() {
   static uint8_t depth = 0;
   return depth;
 }
 
 inline void ha_reset_deferred_state_requests() {
-  ha_deferred_state_requests().clear();
+  std::vector<HaDeferredStateRequest>().swap(ha_deferred_state_requests());
 }
 #define ESPCONTROL_HA_DEFERRED_HELPERS_DEFINED 1
 
@@ -144,6 +150,7 @@ inline void ha_flush_deferred_state_requests(size_t max_requests = 8) {
     }
     processed++;
   }
+  ha_release_deferred_state_request_storage();
 }
 
 inline bool ha_action_begin(esphome::api::HomeassistantActionRequest &req,
@@ -251,7 +258,7 @@ inline bool ha_get_state(const std::string &entity_id,
                                   HA_READ_INTERNAL_FREE_MIN_BYTES,
                                   HA_READ_INTERNAL_LARGEST_MIN_BYTES)) return false;
   auto callback_ref = std::make_shared<HomeAssistantStateCallback>(std::move(callback));
-  if (ha_state_callback_depth() != 0) {
+  if (ha_state_callback_depth() != 0 || !ha_api_state_connected()) {
     return ha_queue_deferred_state_request(entity_id, std::string(), callback_ref, false);
   }
   esphome::api::global_api_server->get_home_assistant_state(
@@ -283,7 +290,7 @@ inline bool ha_get_attribute(const std::string &entity_id,
                                   HA_READ_INTERNAL_FREE_MIN_BYTES,
                                   HA_READ_INTERNAL_LARGEST_MIN_BYTES)) return false;
   auto callback_ref = std::make_shared<HomeAssistantStateCallback>(std::move(callback));
-  if (ha_state_callback_depth() != 0) {
+  if (ha_state_callback_depth() != 0 || !ha_api_state_connected()) {
     return ha_queue_deferred_state_request(entity_id, attribute, callback_ref, true);
   }
   esphome::api::global_api_server->get_home_assistant_state(

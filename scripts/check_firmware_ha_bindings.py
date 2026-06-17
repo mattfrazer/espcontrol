@@ -145,6 +145,8 @@ def firmware_ha_boundary_errors(firmware_dir: Path, root: Path) -> list[str]:
         errors.append(f"{rel}: defer Home Assistant actions when S3 internal heap is critically low")
     if "Home Assistant attribute request" not in text:
         errors.append(f"{rel}: defer one-off Home Assistant attribute reads when S3 internal heap is critically low")
+    if text.count("ha_state_callback_depth() != 0 || !ha_api_state_connected()") < 2:
+        errors.append(f"{rel}: queue one-off Home Assistant reads until state subscription is ready")
 
     return errors
 
@@ -1780,6 +1782,25 @@ def run_self_test() -> int:
             )
         },
         ("send Home Assistant actions only after state subscription is ready",),
+    )
+    expect_ha_boundary_errors(
+        "one-off state read before state connection",
+        {
+            "button_grid_ha.h": (
+                "inline bool ha_subscribe_state() {\n  return true;\n}\n"
+                "inline bool ha_subscribe_attribute() {\n  return true;\n}\n"
+                "inline bool ha_cancel_action_response_callback() {\n  handle_action_response(); return true;\n}\n"
+                "inline bool ha_action_send() {\n"
+                "  return ha_api_state_connected() && HA_ACTION_INTERNAL_FREE_MIN_BYTES;\n"
+                "}\n"
+                "inline bool ha_get_attribute() {\n"
+                "  ha_internal_heap_available(\"Home Assistant attribute request\");\n"
+                "  if (ha_state_callback_depth() != 0) return true;\n"
+                "  return true;\n"
+                "}\n"
+            )
+        },
+        ("queue one-off Home Assistant reads until state subscription is ready",),
     )
     expect_ha_boundary_errors(
         "unavailable retry helper symbols",
