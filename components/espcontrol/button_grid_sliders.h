@@ -463,6 +463,11 @@ inline void light_control_apply_tab_visibility() {
 
 inline void light_control_layout_modal(LightControlCtx *ctx);
 
+inline void light_control_center_icon_label(lv_obj_t *label) {
+  if (!label) return;
+  lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
+}
+
 inline lv_obj_t *light_control_create_tab_button(lv_obj_t *parent, const char *icon,
                                                  const lv_font_t *font,
                                                  LightControlTab tab,
@@ -484,7 +489,7 @@ inline lv_obj_t *light_control_create_tab_button(lv_obj_t *parent, const char *i
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     if (font) lv_obj_set_style_text_font(label, font, LV_PART_MAIN);
     lv_obj_set_style_transform_zoom(label, 210, LV_PART_MAIN);
-    lv_obj_center(label);
+    light_control_center_icon_label(label);
   }
   lv_obj_add_event_cb(btn, [](lv_event_t *e) {
     LightControlTab tab = static_cast<LightControlTab>(
@@ -647,9 +652,8 @@ inline lv_obj_t *light_control_create_power_button(lv_obj_t *parent, const lv_fo
     lv_label_set_text(label, find_icon(turn_on ? "Power" : "Circle Outline"));
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     if (font) lv_obj_set_style_text_font(label, font, LV_PART_MAIN);
-    apply_width_compensation(label, width_compensation_percent);
     lv_obj_set_style_transform_zoom(label, turn_on ? 230 : 180, LV_PART_MAIN);
-    lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
+    light_control_center_icon_label(label);
   }
   lv_obj_add_event_cb(btn, [](lv_event_t *e) {
     bool turn_on = static_cast<bool>(reinterpret_cast<uintptr_t>(lv_event_get_user_data(e)));
@@ -691,14 +695,14 @@ inline void light_control_layout_power(lv_obj_t *group, lv_obj_t *on_btn,
     lv_obj_set_style_radius(on_btn, button_radius, LV_PART_MAIN);
     lv_obj_align(on_btn, LV_ALIGN_TOP_MID, 0, inset);
     lv_obj_t *label = lv_obj_get_child(on_btn, 0);
-    if (label) lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
+    light_control_center_icon_label(label);
   }
   if (off_btn) {
     lv_obj_set_size(off_btn, button_w, button_h);
     lv_obj_set_style_radius(off_btn, button_radius, LV_PART_MAIN);
     lv_obj_align(off_btn, LV_ALIGN_BOTTOM_MID, 0, -inset);
     lv_obj_t *label = lv_obj_get_child(off_btn, 0);
-    if (label) lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
+    light_control_center_icon_label(label);
   }
 }
 
@@ -750,7 +754,7 @@ inline void light_control_layout_modal(LightControlCtx *ctx) {
     lv_coord_t tab_x = first_tab_x + i * (tab_size + tab_gap);
     lv_obj_align(tab_btn, LV_ALIGN_LEFT_MID, tab_x - (tab_btn_size - tab_size) / 2, 0);
     lv_obj_t *label = lv_obj_get_child(tab_btn, 0);
-    if (label) lv_obj_align(label, LV_ALIGN_CENTER, tab_btn_size / 16, tab_btn_size / 16);
+    light_control_center_icon_label(label);
   }
 
   lv_coord_t content_center_y = tab_frame_h / 2 + 12;
