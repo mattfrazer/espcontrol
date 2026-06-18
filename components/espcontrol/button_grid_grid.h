@@ -395,6 +395,10 @@ inline void setup_card_visual(BtnSlot &s, const ParsedCfg &p,
     setup_vacuum_card(s, p);
     return;
   }
+  if (p.type == "lawn_mower") {
+    setup_lawn_mower_card(s, p);
+    return;
+  }
   if (p.type == "option_select") {
     setup_option_select_card(
       s, p, palette.has_sensor_color, palette.sensor_val,
@@ -1082,6 +1086,17 @@ inline void grid_phase2(
       }
       continue;
     }
+    if (p.type == "lawn_mower") {
+      lv_obj_set_user_data(s.btn, nullptr);
+      if (!p.entity.empty() && lawn_mower_card_mode_needs_state(p.sensor)) {
+        LawnMowerCardCtx *ctx = create_lawn_mower_card_context(s, p);
+        subscribe_lawn_mower_card_state(ctx);
+        lv_obj_set_user_data(s.btn, ctx);
+      } else if (!p.entity.empty()) {
+        subscribe_control_availability(s.btn, s.btn, p.entity);
+      }
+      continue;
+    }
     if (p.type == "option_select") {
       if (!p.entity.empty()) {
         OptionSelectCtx *ctx = create_option_select_context(
@@ -1705,6 +1720,24 @@ inline void grid_phase2(
             lv_obj_add_event_cb(sb_btn, [](lv_event_t *e) {
               VacuumCardCtx *ctx = (VacuumCardCtx *)lv_event_get_user_data(e);
               send_vacuum_card_action(ctx);
+            }, LV_EVENT_CLICKED, ctx);
+          }
+        }
+        continue;
+      }
+      if (sb_cfg.type == "lawn_mower") {
+        if (!sb_cfg.entity.empty()) {
+          LawnMowerCardCtx *ctx = create_lawn_mower_card_context(sub_slot, sb_cfg);
+          if (lawn_mower_card_mode_needs_state(sb_cfg.sensor)) {
+            subscribe_lawn_mower_card_state(ctx);
+          } else {
+            subscribe_control_availability(sub_slot.btn, sub_slot.btn, sb_cfg.entity);
+          }
+          add_parent_indicator(sb_cfg.entity);
+          if (!lawn_mower_card_read_only(sb_cfg)) {
+            lv_obj_add_event_cb(sb_btn, [](lv_event_t *e) {
+              LawnMowerCardCtx *ctx = (LawnMowerCardCtx *)lv_event_get_user_data(e);
+              send_lawn_mower_card_action(ctx);
             }, LV_EVENT_CLICKED, ctx);
           }
         }

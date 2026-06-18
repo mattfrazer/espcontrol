@@ -34,6 +34,8 @@ SERVICE_MAPPING_PATTERN = re.compile(
     r"alarm_control_panel\.(?:alarm_arm_away|alarm_arm_home|alarm_arm_night|alarm_arm_vacation|alarm_disarm))\""
 )
 
+LAWN_MOWER_HEADER = "button_grid_lawn_mower.h"
+
 
 def service_mapping_line_allowed(line: str) -> bool:
     if "ESP_LOGW" in line:
@@ -63,6 +65,29 @@ def check_root(root: Path) -> list[str]:
                 and not service_mapping_line_allowed(line)
             ):
                 failures.append(f"{rel}:{line_no}: keep shared card service mappings in the card runtime/contract boundary")
+    mower_header = root / "components" / "espcontrol" / LAWN_MOWER_HEADER
+    if mower_header.exists():
+        text = mower_header.read_text(encoding="utf-8")
+        required = (
+            "lawn_mower.start_mowing",
+            "lawn_mower.pause",
+            "lawn_mower.dock",
+            'ctx->state == "mowing"',
+            'ctx->state == "unavailable" || ctx->state == "unknown"',
+        )
+        for needle in required:
+            if needle not in text:
+                failures.append(f"components/espcontrol/{LAWN_MOWER_HEADER}: missing mower runtime guard {needle}")
+        forbidden = (
+            "vacuum.",
+            "lawn_mower.stop",
+            "lawn_mower.locate",
+            "lawn_mower.clean_spot",
+            "lawn_mower.clean_area",
+        )
+        for needle in forbidden:
+            if needle in text:
+                failures.append(f"components/espcontrol/{LAWN_MOWER_HEADER}: unexpected mower service/reference {needle}")
     return failures
 
 
@@ -107,6 +132,14 @@ def run_self_test() -> None:
         (
             {"button_grid_actions.h": "cover_tilt ? \"cover.set_cover_tilt_position\" : \"cover.set_cover_position\";\n"},
             (),
+        ),
+        (
+            {"button_grid_lawn_mower.h": "return \"lawn_mower.start_mowing\";\n"},
+            ("missing mower runtime guard lawn_mower.pause",),
+        ),
+        (
+            {"button_grid_lawn_mower.h": "return \"lawn_mower.clean_spot\";\n"},
+            ("unexpected mower service/reference lawn_mower.clean_spot",),
         ),
     )
     for files, expected in cases:
