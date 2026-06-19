@@ -1,22 +1,14 @@
 name: CI
 
 on:
+  workflow_dispatch:
   pull_request:
-    paths:
-      - '.github/workflows/ci.yml'
-      - 'common/**'
-      - 'components/**'
-      - 'devices/**'
-      - 'builds/**'
-      - 'src/**'
-      - 'scripts/**'
-      - 'docs/**'
-      - 'package.json'
-      - 'package-lock.json'
   push:
     branches: [main]
     paths:
       - '.github/workflows/ci.yml'
+      - '.github/workflows/nightly-firmware.yml'
+      - '.github/workflows/release.yml'
       - 'common/**'
       - 'components/**'
       - 'devices/**'
@@ -29,108 +21,163 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  ESPHOME_DOCKER_IMAGE: ghcr.io/esphome/esphome:2026.4.5
+  ESPCONTROL_NPM_CACHE_MAX_MB: 512
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  sync-icons:
+    name: Sync Generated Icons
+    if: github.event_name != 'pull_request'
+    runs-on: self-hosted
+    permissions:
+      contents: write
+    outputs:
+      changed: ${{ steps.commit.outputs.changed }}
+    steps:
+      - name: Prepare self-hosted workspace
+        run: |
+          rm -rf "${GITHUB_WORKSPACE:?}/"* "${GITHUB_WORKSPACE:?}/".[!.]* "${GITHUB_WORKSPACE:?}/"..?* 2>/dev/null ||
+            sudo rm -rf "${GITHUB_WORKSPACE:?}/"* "${GITHUB_WORKSPACE:?}/".[!.]* "${GITHUB_WORKSPACE:?}/"..?*
+
+      - uses: actions/checkout@v7.0.0
+      - run: git sparse-checkout disable || true
+
+      - name: Generate icon outputs
+        run: python3 scripts/build.py icons
+
+      - name: Check for generated icon changes
+        id: icon_changes
+        run: |
+          if git diff --quiet -- \
+            common/assets/icon_glyphs.yaml \
+            components/espcontrol/icons.h \
+            src/webserver/entry.js; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v6
+        if: steps.icon_changes.outputs.changed == 'true'
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        if: steps.icon_changes.outputs.changed == 'true'
+        run: |
+          NPM_CACHE="${HOME}/.cache/espcontrol-actions/npm"
+          mkdir -p "${NPM_CACHE}"
+          npm ci --prefer-offline --cache "${NPM_CACHE}"
+          bash scripts/prune_actions_cache.sh "${NPM_CACHE}" "${ESPCONTROL_NPM_CACHE_MAX_MB}" --strategy reset
+
+      - name: Build generated web bundles
+        if: steps.icon_changes.outputs.changed == 'true'
+        run: python3 scripts/build.py www
+
+      - name: Commit generated icon outputs
+        id: commit
+        run: |
+          if git diff --quiet -- \
+            common/assets/icon_glyphs.yaml \
+            components/espcontrol/icons.h \
+            src/webserver/entry.js \
+            docs/public/webserver/*/www.js; then
+            echo "Generated icon files are already up to date."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            common/assets/icon_glyphs.yaml \
+            components/espcontrol/icons.h \
+            src/webserver/entry.js \
+            docs/public/webserver/*/www.js
+          git commit -m "Build generated icon files"
+          git push
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
   validate:
     name: Validate Generated Files
-    runs-on: ubuntu-latest
+    needs: sync-icons
+    if: >-
+      always() &&
+      (github.event_name == 'pull_request' || needs.sync-icons.outputs.changed != 'true')
+    runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v6
+      - name: Prepare self-hosted workspace
+        run: |
+          rm -rf "${GITHUB_WORKSPACE:?}/"* "${GITHUB_WORKSPACE:?}/".[!.]* "${GITHUB_WORKSPACE:?}/"..?* 2>/dev/null ||
+            sudo rm -rf "${GITHUB_WORKSPACE:?}/"* "${GITHUB_WORKSPACE:?}/".[!.]* "${GITHUB_WORKSPACE:?}/"..?*
+
+      - uses: actions/checkout@v7.0.0
+      - run: git sparse-checkout disable || true
 
       - uses: actions/setup-node@v6
         with:
           node-version: 24
 
-      - name: Cache node_modules
-        id: node-modules-cache
-        uses: actions/cache@v5
-        with:
-          path: node_modules
-          key: node-modules-${{ hashFiles('package-lock.json') }}
-
       - name: Install dependencies
-        if: steps.node-modules-cache.outputs.cache-hit != 'true'
-        run: npm ci
+        run: |
+          NPM_CACHE="${HOME}/.cache/espcontrol-actions/npm"
+          mkdir -p "${NPM_CACHE}"
+          npm ci --prefer-offline --cache "${NPM_CACHE}"
+          bash scripts/prune_actions_cache.sh "${NPM_CACHE}" "${ESPCONTROL_NPM_CACHE_MAX_MB}" --strategy reset
 
-      - run: python3 scripts/build.py --check
-      - run: python3 scripts/generate_device_slots.py --check
-      - run: python3 scripts/check_icon_groups.py
-      - run: npm run check:config
+      - name: Install browser runtime
+        run: npx playwright install --with-deps chromium
+
+      - run: npm run check:ci
 
   docs:
     name: Build Docs
-    runs-on: ubuntu-latest
+    needs: [sync-icons, validate]
+    if: >-
+      always() &&
+      needs.validate.result == 'success' &&
+      (github.event_name == 'pull_request' || needs.sync-icons.outputs.changed != 'true')
+    runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v6
+      - name: Prepare self-hosted workspace
+        run: |
+          rm -rf "${GITHUB_WORKSPACE:?}/"* "${GITHUB_WORKSPACE:?}/".[!.]* "${GITHUB_WORKSPACE:?}/"..?* 2>/dev/null ||
+            sudo rm -rf "${GITHUB_WORKSPACE:?}/"* "${GITHUB_WORKSPACE:?}/".[!.]* "${GITHUB_WORKSPACE:?}/"..?*
+
+      - uses: actions/checkout@v7.0.0
+      - run: git sparse-checkout disable || true
 
       - uses: actions/setup-node@v6
         with:
           node-version: 24
 
-      - name: Cache node_modules
-        id: node-modules-cache
-        uses: actions/cache@v5
-        with:
-          path: node_modules
-          key: node-modules-${{ hashFiles('package-lock.json') }}
-
       - name: Install dependencies
-        if: steps.node-modules-cache.outputs.cache-hit != 'true'
-        run: npm ci
+        run: |
+          NPM_CACHE="${HOME}/.cache/espcontrol-actions/npm"
+          mkdir -p "${NPM_CACHE}"
+          npm ci --prefer-offline --cache "${NPM_CACHE}"
+          bash scripts/prune_actions_cache.sh "${NPM_CACHE}" "${ESPCONTROL_NPM_CACHE_MAX_MB}" --strategy reset
 
       - run: npm run docs:build
 
-  compile:
-    name: Compile Firmware (${{ matrix.slug }})
+  ci-gate:
+    name: CI Gate
+    needs: [validate, docs]
+    if: always() && github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        slug:
-          - guition-esp32-p4-jc1060p470
-          - guition-esp32-p4-jc4880p443
-          - guition-esp32-p4-jc8012p4a1
-          - esp32-p4-86
-          - guition-esp32-s3-4848s040
     steps:
-      - uses: actions/checkout@v6
-
-      - name: Cache ESPHome build
-        uses: actions/cache@v5
-        with:
-          path: builds/.esphome
-          key: esphome-ci-${{ matrix.slug }}-${{ hashFiles('builds/*.yaml', 'common/**', 'devices/**', 'components/**') }}
-          restore-keys: |
-            esphome-ci-${{ matrix.slug }}-
-
-      - name: Pull ESPHome image
+      - name: Verify required CI jobs passed
         run: |
-          for attempt in 1 2 3 4 5; do
-            echo "Pulling $ESPHOME_DOCKER_IMAGE (attempt $attempt of 5)"
-            if docker pull "$ESPHOME_DOCKER_IMAGE"; then
-              exit 0
-            fi
-
-            if [ "$attempt" -eq 5 ]; then
-              echo "Unable to pull $ESPHOME_DOCKER_IMAGE after $attempt attempts"
-              exit 1
-            fi
-
-            delay=$((attempt * 15))
-            echo "Pull failed; retrying in $delay seconds"
-            sleep "$delay"
-          done
-
-      - name: Compile firmware
-        run: >-
-          docker run --rm -v "${PWD}:/config"
-          "$ESPHOME_DOCKER_IMAGE"
-          compile /config/builds/${{ matrix.slug }}.factory.yaml
-
-      - name: Fix ESPHome cache permissions
-        if: always()
-        run: |
-          if [ -d builds/.esphome ]; then
-            sudo chown -R "$USER:$USER" builds/.esphome
+          if [ "${{ needs.validate.result }}" != "success" ] ||
+             [ "${{ needs.docs.result }}" != "success" ]; then
+            echo "::error::Required CI jobs did not pass."
+            echo "Validate Generated Files: ${{ needs.validate.result }}"
+            echo "Build Docs: ${{ needs.docs.result }}"
+            exit 1
           fi

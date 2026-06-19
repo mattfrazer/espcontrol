@@ -10,6 +10,17 @@ inline void setup_sensor_card(BtnSlot &s, const ParsedCfg &p,
       static_cast<lv_style_selector_t>(LV_PART_MAIN) | static_cast<lv_style_selector_t>(LV_STATE_DEFAULT));
   }
   lv_obj_clear_flag(s.btn, LV_OBJ_FLAG_CLICKABLE);
+  if (p.precision == "icon") {
+    lv_obj_clear_flag(s.icon_lbl, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s.sensor_container, LV_OBJ_FLAG_HIDDEN);
+    const char *icon_cp = (p.icon.empty() || p.icon == "Auto")
+      ? find_icon("Auto") : find_icon(p.icon.c_str());
+    lv_label_set_text(s.icon_lbl, icon_cp);
+    if (!p.label.empty()) {
+      lv_label_set_text(s.text_lbl, p.label.c_str());
+    }
+    return;
+  }
   lv_obj_add_flag(s.icon_lbl, LV_OBJ_FLAG_HIDDEN);
   lv_obj_clear_flag(s.sensor_container, LV_OBJ_FLAG_HIDDEN);
   if (!p.unit.empty()) {
@@ -85,8 +96,8 @@ inline const char *calendar_month_name(int month) {
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December"
   };
-  if (month < 1 || month > 12) return "Date";
-  return months[month - 1];
+  if (month < 1 || month > 12) return espcontrol_i18n("Date");
+  return espcontrol_i18n(months[month - 1]);
 }
 
 inline void apply_calendar_card_text(const CalendarCardRef &ref,
@@ -95,7 +106,7 @@ inline void apply_calendar_card_text(const CalendarCardRef &ref,
   char label_buf[32];
   const char *value_text = "--";
   const char *unit_text = "";
-  const char *label_text = "Date";
+  const char *label_text = espcontrol_i18n("Date");
 
   if (ref.show_time) {
     if (state.time_valid &&
@@ -103,14 +114,8 @@ inline void apply_calendar_card_text(const CalendarCardRef &ref,
         state.month >= 1 && state.month <= 12 &&
         state.hour >= 0 && state.hour <= 23 &&
         state.minute >= 0 && state.minute <= 59) {
-      if (state.use_12h) {
-        int hour12 = state.hour % 12;
-        if (hour12 == 0) hour12 = 12;
-        snprintf(value_buf, sizeof(value_buf), "%d:%02d", hour12, state.minute);
-        unit_text = state.hour < 12 ? "am" : "pm";
-      } else {
-        snprintf(value_buf, sizeof(value_buf), "%02d:%02d", state.hour, state.minute);
-      }
+      format_clock_time_without_suffix(value_buf, sizeof(value_buf),
+                                       state.hour, state.minute, state.use_12h);
       value_text = value_buf;
       snprintf(label_buf, sizeof(label_buf), "%d %s", state.day, calendar_month_name(state.month));
       label_text = label_buf;
@@ -127,6 +132,15 @@ inline void apply_calendar_card_text(const CalendarCardRef &ref,
   if (ref.label_lbl) lv_label_set_text(ref.label_lbl, label_text);
 }
 
+inline void refresh_calendar_cards() {
+  CalendarDateState &state = calendar_date_state();
+  CalendarCardRef *refs = calendar_card_refs();
+  int count = calendar_card_count();
+  for (int i = 0; i < count; i++) {
+    apply_calendar_card_text(refs[i], state);
+  }
+}
+
 inline void update_calendar_cards(bool valid, int day, int month) {
   CalendarDateState &state = calendar_date_state();
   state.date_valid = valid && day >= 1 && day <= 31 && month >= 1 && month <= 12;
@@ -138,11 +152,7 @@ inline void update_calendar_cards(bool valid, int day, int month) {
     state.use_12h = false;
   }
 
-  CalendarCardRef *refs = calendar_card_refs();
-  int count = calendar_card_count();
-  for (int i = 0; i < count; i++) {
-    apply_calendar_card_text(refs[i], state);
-  }
+  refresh_calendar_cards();
 }
 
 inline void update_calendar_cards_time(bool valid, int day, int month,
@@ -162,11 +172,7 @@ inline void update_calendar_cards_time(bool valid, int day, int month,
     state.month = month;
   }
 
-  CalendarCardRef *refs = calendar_card_refs();
-  int count = calendar_card_count();
-  for (int i = 0; i < count; i++) {
-    apply_calendar_card_text(refs[i], state);
-  }
+  refresh_calendar_cards();
 }
 
 inline bool parse_calendar_date_text(const std::string &value, int &day, int &month) {
@@ -233,8 +239,8 @@ inline void subscribe_calendar_date_source(const std::string &entity_id) {
     if (existing == source) return;
   }
   subscribed.push_back(source);
-  esphome::api::global_api_server->subscribe_home_assistant_state(
-    source, {},
+  ha_subscribe_state(
+    source,
     std::function<void(esphome::StringRef)>([](esphome::StringRef state) {
       update_calendar_cards_from_date_text(string_ref_limited(state, 16));
     })
@@ -247,6 +253,7 @@ struct TimezoneCardRef {
   lv_obj_t *label_lbl;
   std::string timezone;
   std::string label;
+  bool show_label;
 };
 
 inline TimezoneCardRef *timezone_card_refs() {
@@ -265,23 +272,14 @@ inline void reset_timezone_cards() {
 
 inline std::string timezone_city_label(const std::string &tz_option) {
   std::string tz_id = timezone_id_from_option(tz_option);
-  if (tz_id.empty()) return "World Clock";
+  if (tz_id.empty()) return espcontrol_i18n("World Clock");
   if (tz_id == "UTC") return "UTC";
   size_t slash = tz_id.rfind('/');
   std::string city = slash == std::string::npos ? tz_id : tz_id.substr(slash + 1);
   for (char &ch : city) {
     if (ch == '_') ch = ' ';
   }
-  return city.empty() ? std::string("World Clock") : city;
-}
-
-inline void set_posix_timezone_for_epoch(const std::string &tz_option, time_t epoch) {
-  std::string tz_id = timezone_id_from_option(tz_option);
-  struct tm utc_tm;
-  gmtime_r(&epoch, &utc_tm);
-  const char *posix = resolve_posix_tz_at_utc(tz_id, utc_point_from_tm(utc_tm));
-  setenv("TZ", posix, 1);
-  tzset();
+  return city.empty() ? espcontrol_i18n(std::string("World Clock")) : city;
 }
 
 inline bool timezone_localtime(const std::string &tz_option, time_t epoch, struct tm &out) {
@@ -297,7 +295,9 @@ inline void apply_timezone_card_text(const TimezoneCardRef &ref,
                                      const std::string &active_timezone,
                                      bool use_12h) {
   std::string tz_option = ref.timezone.empty() ? active_timezone : ref.timezone;
-  std::string label = ref.label.empty() ? timezone_city_label(tz_option) : ref.label;
+  std::string label = ref.show_label
+    ? (ref.label.empty() ? timezone_city_label(tz_option) : ref.label)
+    : std::string("");
   const char *value_text = "--:--";
   const char *unit_text = "";
   char value_buf[8];
@@ -307,14 +307,8 @@ inline void apply_timezone_card_text(const TimezoneCardRef &ref,
     if (timezone_localtime(tz_option, epoch, local_tm)) {
       int hour = local_tm.tm_hour;
       int minute = local_tm.tm_min;
-      if (use_12h) {
-        int hour12 = hour % 12;
-        if (hour12 == 0) hour12 = 12;
-        snprintf(value_buf, sizeof(value_buf), "%d:%02d", hour12, minute);
-        unit_text = hour < 12 ? "am" : "pm";
-      } else {
-        snprintf(value_buf, sizeof(value_buf), "%02d:%02d", hour, minute);
-      }
+      format_clock_time_without_suffix(value_buf, sizeof(value_buf),
+                                       hour, minute, use_12h);
       value_text = value_buf;
     }
   }
@@ -327,13 +321,14 @@ inline void apply_timezone_card_text(const TimezoneCardRef &ref,
 inline void register_timezone_card(lv_obj_t *value_lbl, lv_obj_t *unit_lbl,
                                    lv_obj_t *label_lbl,
                                    const std::string &timezone,
-                                   const std::string &label) {
+                                   const std::string &label,
+                                   bool show_label = true) {
   int &count = timezone_card_count();
   if (count >= MAX_GRID_SLOTS + MAX_SUBPAGE_ITEMS) {
     ESP_LOGW("timezone", "Too many timezone cards; skipping time updates");
     return;
   }
-  timezone_card_refs()[count++] = {value_lbl, unit_lbl, label_lbl, timezone, label};
+  timezone_card_refs()[count++] = {value_lbl, unit_lbl, label_lbl, timezone, label, show_label};
   apply_timezone_card_text(timezone_card_refs()[count - 1], false, 0, timezone, false);
 }
 
@@ -345,10 +340,6 @@ inline void update_timezone_cards(bool valid,
   int count = timezone_card_count();
   for (int i = 0; i < count; i++) {
     apply_timezone_card_text(refs[i], valid, epoch, active_timezone, use_12h);
-  }
-  if (count > 0) {
-    if (valid) set_posix_timezone_for_epoch(active_timezone, epoch);
-    else apply_timezone(active_timezone);
   }
 }
 
@@ -363,7 +354,7 @@ inline void setup_calendar_card(BtnSlot &s, const ParsedCfg &p,
   lv_obj_clear_flag(s.sensor_container, LV_OBJ_FLAG_HIDDEN);
   lv_label_set_text(s.sensor_lbl, "--");
   lv_label_set_text(s.unit_lbl, "");
-  lv_label_set_text(s.text_lbl, "Date");
+  lv_label_set_text(s.text_lbl, espcontrol_i18n("Date"));
   register_calendar_card(s.sensor_lbl, s.unit_lbl, s.text_lbl, calendar_card_shows_time(p));
 }
 
@@ -383,19 +374,38 @@ inline void setup_timezone_card(BtnSlot &s, const ParsedCfg &p,
   register_timezone_card(s.sensor_lbl, s.unit_lbl, s.text_lbl, p.entity, p.label);
 }
 
+inline void setup_clock_card(BtnSlot &s, const ParsedCfg &p,
+                             bool has_sensor_color, uint32_t sensor_val) {
+  if (has_sensor_color) {
+    lv_obj_set_style_bg_color(s.btn, lv_color_hex(sensor_val),
+      static_cast<lv_style_selector_t>(LV_PART_MAIN) | static_cast<lv_style_selector_t>(LV_STATE_DEFAULT));
+  }
+  lv_obj_clear_flag(s.btn, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_add_flag(s.icon_lbl, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_clear_flag(s.sensor_container, LV_OBJ_FLAG_HIDDEN);
+  lv_label_set_text(s.sensor_lbl, "--:--");
+  lv_label_set_text(s.unit_lbl, "");
+  lv_label_set_text(s.text_lbl, "");
+  register_timezone_card(s.sensor_lbl, s.unit_lbl, s.text_lbl, p.entity, "", false);
+}
+
 inline void setup_weather_card(BtnSlot &s, bool has_sensor_color, uint32_t sensor_val) {
   if (has_sensor_color) {
     lv_obj_set_style_bg_color(s.btn, lv_color_hex(sensor_val),
       static_cast<lv_style_selector_t>(LV_PART_MAIN) | static_cast<lv_style_selector_t>(LV_STATE_DEFAULT));
   }
   lv_obj_clear_flag(s.btn, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_clear_flag(s.icon_lbl, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(s.sensor_container, LV_OBJ_FLAG_HIDDEN);
   lv_label_set_text(s.icon_lbl, find_icon("Weather Cloudy"));
-  lv_label_set_text(s.text_lbl, "Weather");
+  lv_label_set_text(s.sensor_lbl, "");
+  lv_label_set_text(s.unit_lbl, "");
+  lv_label_set_text(s.text_lbl, espcontrol_i18n("Cloudy"));
 }
 
 inline bool weather_card_shows_forecast(const ParsedCfg &p) {
   return p.type == "weather_forecast" ||
-    (p.type == "weather" && (p.precision == "today" || p.precision == "tomorrow"));
+    (p.type == "weather" && card_runtime_weather_forecast_precision(p.precision));
 }
 
 inline std::string weather_card_forecast_day(const ParsedCfg &p) {
@@ -413,28 +423,30 @@ inline void setup_weather_forecast_card(BtnSlot &s, const ParsedCfg &p,
   lv_obj_add_flag(s.icon_lbl, LV_OBJ_FLAG_HIDDEN);
   lv_obj_clear_flag(s.sensor_container, LV_OBJ_FLAG_HIDDEN);
   lv_label_set_text(s.sensor_lbl, "--/--");
-  lv_label_set_text(s.unit_lbl, "");
+  lv_label_set_text(s.unit_lbl, display_temperature_unit_symbol());
   std::string day = weather_card_forecast_day(p);
   std::string label = p.label.empty()
-    ? (day == "today" ? "Today" : "Tomorrow")
+    ? (day == "today" ? espcontrol_i18n(std::string("Today")) : espcontrol_i18n(std::string("Tomorrow")))
     : p.label;
   lv_label_set_text(s.text_lbl, label.c_str());
   apply_width_compensation(s.sensor_container, width_compensation_percent);
   apply_width_compensation(s.text_lbl, width_compensation_percent);
-  register_weather_forecast_card(s.sensor_lbl, s.unit_lbl, s.text_lbl, p.entity, day, p.label);
+  register_weather_forecast_card(s.btn, s.sensor_lbl, s.unit_lbl, s.text_lbl,
+    p.entity, day, p.label);
 }
 
 inline void apply_push_button_transition(lv_obj_t *btn);
+inline void clear_push_button_transition(lv_obj_t *btn);
 
 inline void setup_garage_card(BtnSlot &s, const ParsedCfg &p) {
   if (garage_command_mode(p.sensor)) {
     lv_label_set_text(s.icon_lbl, garage_command_icon(p));
-    lv_label_set_text(s.text_lbl, garage_card_label(p));
+    lv_label_set_text(s.text_lbl, garage_card_show_status(p) ? "--" : garage_card_label(p));
     apply_push_button_transition(s.btn);
     return;
   }
   lv_label_set_text(s.icon_lbl, garage_closed_icon(p.icon));
-  lv_label_set_text(s.text_lbl, garage_card_label(p));
+  lv_label_set_text(s.text_lbl, garage_card_show_status(p) ? "--" : garage_card_label(p));
 }
 
 inline void setup_lock_card(BtnSlot &s, const ParsedCfg &p) {
@@ -448,7 +460,44 @@ inline void setup_lock_card(BtnSlot &s, const ParsedCfg &p) {
   lv_label_set_text(s.text_lbl, lock_card_label(p));
 }
 
+inline const char *screen_lock_locked_icon(const ParsedCfg &p) {
+  (void) p;
+  return find_icon("Lock");
+}
+
+inline const char *screen_lock_unlocked_icon(const ParsedCfg &p) {
+  (void) p;
+  return find_icon("Lock Open");
+}
+
+inline std::string screen_lock_card_label() {
+  return screen_lock_enabled()
+    ? espcontrol_i18n(std::string("Screen Locked"))
+    : espcontrol_i18n(std::string("Screen Unlocked"));
+}
+
+inline void screen_lock_register_card(const BtnSlot &s, const ParsedCfg &p) {
+  ScreenLockCardRef ref;
+  ref.btn = s.btn;
+  ref.icon_lbl = s.icon_lbl;
+  ref.text_lbl = s.text_lbl;
+  ref.locked_icon = screen_lock_locked_icon(p);
+  ref.unlocked_icon = screen_lock_unlocked_icon(p);
+  screen_lock_card_refs().push_back(ref);
+  screen_lock_register_controlled_button(s.btn);
+}
+
+inline void setup_screen_lock_card(BtnSlot &s, const ParsedCfg &p) {
+  lv_label_set_text(s.icon_lbl,
+    screen_lock_enabled() ? screen_lock_locked_icon(p) : screen_lock_unlocked_icon(p));
+  std::string label = screen_lock_card_label();
+  lv_label_set_text(s.text_lbl, label.c_str());
+  screen_lock_register_card(s, p);
+  apply_push_button_transition(s.btn);
+}
+
 inline void apply_push_button_transition(lv_obj_t *btn) {
+  if (!btn) return;
   static const lv_style_prop_t push_props[] = {LV_STYLE_BG_COLOR, LV_STYLE_PROP_INV};
   static lv_style_transition_dsc_t push_trans;
   static bool push_trans_inited = false;
@@ -457,6 +506,12 @@ inline void apply_push_button_transition(lv_obj_t *btn) {
     push_trans_inited = true;
   }
   lv_obj_set_style_transition(btn, &push_trans,
+    static_cast<lv_style_selector_t>(LV_PART_MAIN) | LV_STATE_DEFAULT);
+}
+
+inline void clear_push_button_transition(lv_obj_t *btn) {
+  if (!btn) return;
+  lv_obj_remove_local_style_prop(btn, LV_STYLE_TRANSITION,
     static_cast<lv_style_selector_t>(LV_PART_MAIN) | LV_STATE_DEFAULT);
 }
 
@@ -508,15 +563,28 @@ inline void setup_toggle_visual(BtnSlot &s, const ParsedCfg &p) {
       apply_push_button_transition(s.btn);
     }
     if (p.type == "push" && p.label.empty()) {
-      lv_label_set_text(s.text_lbl, "Push");
+      lv_label_set_text(s.text_lbl, espcontrol_i18n("Push"));
     }
   }
 }
 
 inline void setup_action_card(BtnSlot &s, const ParsedCfg &p) {
-  lv_label_set_text(s.text_lbl, p.label.empty() ? (p.entity.empty() ? "Action" : p.entity.c_str()) : p.label.c_str());
+  std::string action_label = p.label.empty()
+    ? (p.entity.empty() ? espcontrol_i18n(std::string("Action")) : p.entity)
+    : p.label;
+  lv_label_set_text(s.text_lbl, action_label.c_str());
   const char *icon_cp = (p.icon.empty() || p.icon == "Auto") ? find_icon("Flash") : find_icon(p.icon.c_str());
   lv_label_set_text(s.icon_lbl, icon_cp);
+  if (action_card_state_icon_mode(p) || action_card_state_text_mode(p)) {
+    lv_obj_clear_flag(s.icon_lbl, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s.sensor_container, LV_OBJ_FLAG_HIDDEN);
+  } else if (action_card_state_numeric_mode(p)) {
+    lv_obj_add_flag(s.icon_lbl, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(s.sensor_container, LV_OBJ_FLAG_HIDDEN);
+    lv_label_set_text(s.sensor_lbl, "--");
+    std::string unit = trim_display_unit(action_card_state_unit(p));
+    lv_label_set_text(s.unit_lbl, unit.c_str());
+  }
   apply_push_button_transition(s.btn);
 }
 
@@ -638,6 +706,58 @@ inline void setup_local_sensor_card(BtnSlot &s, const ParsedCfg &p,
 #endif
 }
 
+inline const char *door_window_closed_icon(const ParsedCfg &p) {
+  if (!p.icon.empty() && p.icon != "Auto") return find_icon(p.icon.c_str());
+  return find_icon(door_window_closed_icon_name(p.precision));
+}
+
+inline const char *door_window_open_icon(const ParsedCfg &p) {
+  if (!p.icon_on.empty() && p.icon_on != "Auto") return find_icon(p.icon_on.c_str());
+  return find_icon(door_window_open_icon_name(p.precision));
+}
+
+inline void setup_door_window_card(BtnSlot &s, const ParsedCfg &p,
+                                   bool has_sensor_color, uint32_t sensor_val) {
+  if (has_sensor_color) {
+    lv_obj_set_style_bg_color(s.btn, lv_color_hex(sensor_val),
+      static_cast<lv_style_selector_t>(LV_PART_MAIN) | static_cast<lv_style_selector_t>(LV_STATE_DEFAULT));
+  }
+  lv_obj_clear_flag(s.btn, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_clear_flag(s.icon_lbl, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(s.sensor_container, LV_OBJ_FLAG_HIDDEN);
+  lv_label_set_text(s.icon_lbl, door_window_closed_icon(p));
+  std::string label = p.label.empty()
+    ? (normalize_door_window_subtype(p.precision) == "window"
+        ? espcontrol_i18n(std::string("Window"))
+        : espcontrol_i18n(std::string("Door")))
+    : p.label;
+  lv_label_set_text(s.text_lbl, label.c_str());
+}
+
+inline const char *presence_clear_icon(const ParsedCfg &p) {
+  if (!p.icon.empty() && p.icon != "Auto") return find_icon(p.icon.c_str());
+  return find_icon("Motion Sensor Off");
+}
+
+inline const char *presence_detected_icon(const ParsedCfg &p) {
+  if (!p.icon_on.empty() && p.icon_on != "Auto") return find_icon(p.icon_on.c_str());
+  return find_icon("Motion Sensor");
+}
+
+inline void setup_presence_card(BtnSlot &s, const ParsedCfg &p,
+                                bool has_sensor_color, uint32_t sensor_val) {
+  if (has_sensor_color) {
+    lv_obj_set_style_bg_color(s.btn, lv_color_hex(sensor_val),
+      static_cast<lv_style_selector_t>(LV_PART_MAIN) | static_cast<lv_style_selector_t>(LV_STATE_DEFAULT));
+  }
+  lv_obj_clear_flag(s.btn, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_clear_flag(s.icon_lbl, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(s.sensor_container, LV_OBJ_FLAG_HIDDEN);
+  lv_label_set_text(s.icon_lbl, presence_clear_icon(p));
+  std::string label = p.label.empty() ? espcontrol_i18n(std::string("Presence")) : p.label;
+  lv_label_set_text(s.text_lbl, label.c_str());
+}
+
 inline bool subpage_parent_sensor_state_enabled(const ParsedCfg &p) {
   return p.type == "subpage" &&
          !p.sensor.empty() &&
@@ -656,12 +776,19 @@ inline bool subpage_parent_icon_entity_state_enabled(const ParsedCfg &p) {
 }
 
 inline void setup_subpage_parent_state_card(BtnSlot &s, const ParsedCfg &p,
-                                            const lv_font_t *value_font) {
+                                            const lv_font_t *value_font,
+                                            bool subpage_chevron_enabled = true,
+                                            int subpage_chevron_x = 0,
+                                            int subpage_chevron_y = 2,
+                                            int subpage_chevron_text_width_percent = 94) {
   setup_toggle_visual(s, p);
   if (p.precision == "text") {
     lv_obj_clear_flag(s.icon_lbl, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s.sensor_container, LV_OBJ_FLAG_HIDDEN);
     set_wrapped_button_label_text(s.text_lbl, "--");
+    set_subpage_chevron_visible(
+      s, subpage_chevron_enabled, subpage_chevron_x, subpage_chevron_y,
+      subpage_chevron_text_width_percent);
     return;
   }
 
@@ -671,5 +798,9 @@ inline void setup_subpage_parent_state_card(BtnSlot &s, const ParsedCfg &p,
   lv_label_set_text(s.sensor_lbl, "--");
   std::string unit = trim_display_unit(p.unit);
   lv_label_set_text(s.unit_lbl, unit.c_str());
-  lv_label_set_text(s.text_lbl, p.label.empty() ? "Subpage" : p.label.c_str());
+  std::string subpage_label = p.label.empty() ? espcontrol_i18n(std::string("Subpage")) : p.label;
+  lv_label_set_text(s.text_lbl, subpage_label.c_str());
+  set_subpage_chevron_visible(
+    s, subpage_chevron_enabled, subpage_chevron_x, subpage_chevron_y,
+    subpage_chevron_text_width_percent);
 }

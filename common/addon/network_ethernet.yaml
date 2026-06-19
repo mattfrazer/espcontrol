@@ -27,13 +27,9 @@ script:
           network_status_open_modal(
             "${friendly_name}",
             network_status_ip_address(),
-            "Not applicable",
-            id(uptime_sensor).state,
-            id(firmware_version_sensor).state,
-            id(${label_font})->get_lv_font(),
+            "${firmware_version}",
             id(${media_title_font})->get_lv_font(),
-            id(${icon_font})->get_lv_font(),
-            id(sensor_card_color).state);
+            id(${icon_font})->get_lv_font());
 
 # ---------------------------------------------------------------------------
 # Uptime
@@ -50,7 +46,7 @@ sensor:
 # ---------------------------------------------------------------------------
 text_sensor:
   - platform: template
-    name: "Network Transport"
+    name: "${entity_network_transport}"
     id: network_transport_sensor
     icon: mdi:ethernet
     entity_category: diagnostic

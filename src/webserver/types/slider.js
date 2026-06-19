@@ -1,47 +1,118 @@
 // Slider and cover button types: draggable brightness/position control.
 // Factory creates both "slider" (light.turn_on w/ brightness) and "cover"
 // variants. Slider cards are always vertical. For covers, b.sensor stores
-// "", "tilt", "toggle", or a one-tap cover command.
+// "modal", "", "tilt", "toggle", or a one-tap cover command.
 function coverCommandMode(mode) {
   return mode === "open" || mode === "close" || mode === "stop" || mode === "set_position";
 }
 
+function coverModeOptionValues(allowCommands) {
+  var spec = cardContractOptionSpec("cover", "cover_mode");
+  var values = spec && spec.values ? spec.values : ["modal", "", "tilt", "toggle", "open", "close", "stop", "set_position"];
+  return values.filter(function (value) {
+    return allowCommands || !coverCommandMode(value);
+  });
+}
+
 function normalizeCoverMode(mode, allowCommands) {
-  if (mode === "tilt" || mode === "toggle") return mode;
-  if (allowCommands && coverCommandMode(mode)) return mode;
-  return "";
+  mode = String(mode || "");
+  return coverModeOptionValues(allowCommands).indexOf(mode) >= 0 ? mode : "";
+}
+
+function coverModeOptionsForSettings(currentMode) {
+  return [
+    ["modal", "Modal"],
+    ["", "Slider: Position"],
+    ["tilt", "Slider: Tilt"],
+    ["toggle", "Toggle"],
+    ["open", "Open"],
+    ["close", "Close"],
+    ["stop", "Stop"],
+    ["set_position", "Set Position"],
+  ];
 }
 
 function normalizeCoverPosition(value) {
   var n = parseInt(value, 10);
-  if (!isFinite(n)) n = 50;
-  if (n < 0) n = 0;
-  if (n > 100) n = 100;
+  var spec = cardContractOptionSpec("cover", "cover_position") || {};
+  var fallback = parseInt(spec.defaultValue, 10);
+  var min = typeof spec.min === "number" ? spec.min : 0;
+  var max = typeof spec.max === "number" ? spec.max : 100;
+  if (!isFinite(fallback)) fallback = 50;
+  if (!isFinite(n)) n = fallback;
+  if (n < min) n = min;
+  if (n > max) n = max;
   return String(n);
 }
 
-function sliderTypeFactory(opts) {
+function sliderCardMetadata(opts) {
   return {
-    label: opts.label,
-    allowInSubpage: true,
+    entity: {
+      label: "Entity",
+      idSuffix: "entity",
+      placeholder: opts.entityPlaceholder,
+      domains: function () { return cardContractDomains(opts.type); },
+      bindName: "entity",
+      rerender: true,
+      requiredMessage: "Add an entity before saving.",
+    },
+    labelField: {
+      label: "Label",
+      idSuffix: "label",
+      field: "label",
+      placeholder: opts.placeholder,
+      rerender: true,
+    },
+    coverInteraction: {
+      mode: {
+        label: "Type",
+        idSuffix: "cover-interaction",
+        options: function (b) { return coverModeOptionsForSettings(normalizeCoverMode(b && b.sensor, true)); },
+        value: function (b) {
+          return normalizeCoverMode(b.sensor, true);
+        },
+      },
+    },
+    coverPosition: {
+      label: "Position",
+      idSuffix: "cover-position",
+      min: 0,
+      max: 100,
+      step: 1,
+      placeholder: "e.g. 50",
+      value: function (b) {
+        return normalizeCoverPosition(b.unit);
+      },
+    },
+    preview: {
+      badge: opts.badgeIcon,
+    },
+  };
+}
+
+function sliderTypeFactory(opts) {
+  var metadata = sliderCardMetadata(opts);
+  return {
+    label: function () { return cardContractCardLabel(opts.type); },
+    allowInSubpage: function () { return cardContractAllowInSubpage(opts.type); },
+    pickerKey: function () { return cardContractPickerKey(opts.type); },
+    hidden: function () { return cardContractHidden(opts.type); },
     hideLabel: !!opts.hideLabel,
     labelPlaceholder: opts.placeholder,
+    defaultConfig: function () { return cardContractDefaultConfig(opts.type); },
+    cardMetadata: metadata,
     onSelect: function (b) {
-      b.sensor = ""; b.unit = "";
+      b.sensor = opts.type === "cover" ? "modal" : "";
+      b.unit = "";
       b.icon = opts.defaultIcon;
       b.icon_on = opts.defaultIconOn;
     },
     renderSettings: function (panel, b, slot, helpers) {
       function labelField() {
-        panel.appendChild(helpers.textField(
-          "Label",
-          helpers.idPrefix + "label",
-          b.label,
-          opts.placeholder,
-          "label",
-          true
-        ).field);
+        helpers.renderCardTextField(panel, b, helpers, metadata.labelField);
       }
+
+      if (opts.lightControlType) renderLightControlTypeField(panel, b, helpers);
 
       var coverMode = "";
       var coverPositionField = null;
@@ -109,33 +180,17 @@ function sliderTypeFactory(opts) {
           applyCoverModeDefaultIcon(storedCoverMode);
         }
 
-        var interactionOptions = [
-          ["", "Slider: Position"],
-          ["tilt", "Slider: Tilt"],
-          ["toggle", "Toggle"],
-          ["open", "Open"],
-          ["close", "Close"],
-          ["stop", "Stop"],
-          ["set_position", "Set Position"],
-        ];
-        var interactionField = helpers.selectField("Type", helpers.idPrefix + "cover-interaction", interactionOptions, coverMode);
+        var interactionField = helpers.renderCardModeSelector(panel, b, helpers, {
+          mode: Object.assign({}, metadata.coverInteraction.mode, {
+            value: function () { return coverMode; },
+            onChange: function () { setCoverMode(this.value, true); },
+          }),
+        });
         var interactionSelect = interactionField.select;
-        panel.appendChild(interactionField.field);
 
-        coverPositionField = document.createElement("div");
-        coverPositionField.className = "sp-field";
-        coverPositionField.appendChild(helpers.fieldLabel("Position", helpers.idPrefix + "cover-position"));
-        coverPositionInput = document.createElement("input");
-        coverPositionInput.type = "number";
-        coverPositionInput.className = "sp-input";
-        coverPositionInput.id = helpers.idPrefix + "cover-position";
-        coverPositionInput.min = "0";
-        coverPositionInput.max = "100";
-        coverPositionInput.step = "1";
-        coverPositionInput.placeholder = "e.g. 50";
-        coverPositionInput.value = normalizeCoverPosition(b.unit);
-        coverPositionField.appendChild(coverPositionInput);
-        panel.appendChild(coverPositionField);
+        var positionControl = helpers.renderCardNumberField(panel, b, helpers, metadata.coverPosition);
+        coverPositionField = positionControl.field;
+        coverPositionInput = positionControl.input;
         if (coverMode === "set_position" && b.unit !== coverPositionInput.value) {
           b.unit = coverPositionInput.value;
           helpers.saveField("unit", b.unit);
@@ -178,24 +233,24 @@ function sliderTypeFactory(opts) {
         coverPositionInput.addEventListener("blur", function () { setCoverPosition(this.value); });
       }
 
-      if (opts.renderLabelInSettings) labelField();
+      if (opts.renderLabelInSettings && !opts.labelAfterEntity) labelField();
 
-      panel.appendChild(helpers.entityField(
-        "Entity",
-        helpers.idPrefix + "entity",
-        b.entity,
-        opts.entityPlaceholder,
-        opts.entityDomains,
-        "entity",
-        true,
-        "Add an entity before saving."
-      ).field);
+      helpers.renderCardEntityField(panel, b, helpers, metadata);
+
+      if (opts.renderLabelInSettings && opts.labelAfterEntity) labelField();
 
       function iconField(label, inputSuffix, field, currentVal, defaultVal) {
-        return helpers.iconPickerField(helpers.idPrefix + inputSuffix + "-picker", helpers.idPrefix + inputSuffix, currentVal, function (opt) {
-          b[field] = opt || defaultVal;
-          helpers.saveField(field, b[field]);
-        }, label);
+        var picker = helpers.renderCardIconPicker(panel, b, helpers, {
+          pickerIdSuffix: inputSuffix + "-picker",
+          idSuffix: inputSuffix,
+          field: field,
+          value: currentVal,
+          fallback: defaultVal,
+          label: label,
+        });
+        var iconPicker = picker.querySelector(".sp-icon-picker");
+        if (iconPicker && iconPicker._setIcon) iconPicker._setIcon(currentVal);
+        return picker;
       }
 
       if (opts.alwaysShowIconPair) {
@@ -209,9 +264,6 @@ function sliderTypeFactory(opts) {
         var onIconSection = iconField(
           opts.iconOnFieldLabel || "Open Icon", "icon-on", "icon_on", onIconVal, opts.defaultIconOn
         );
-        panel.appendChild(singleIconSection);
-        panel.appendChild(offIconSection);
-        panel.appendChild(onIconSection);
         syncCoverUi = function () {
           var singleIcon = opts.interactionMode && coverCommandMode(coverMode);
           singleIconSection.style.display = singleIcon ? "" : "none";
@@ -223,14 +275,13 @@ function sliderTypeFactory(opts) {
         };
         syncCoverUi();
       } else {
-        panel.appendChild(helpers.iconPickerField(
-          helpers.idPrefix + "icon-picker", helpers.idPrefix + "icon",
-          b.icon || "Auto", function (opt) {
-            b.icon = opt;
-            helpers.saveField("icon", opt);
-          },
-          "Icon"
-        ));
+        helpers.renderCardIconPicker(panel, b, helpers, {
+          pickerIdSuffix: "icon-picker",
+          idSuffix: "icon",
+          field: "icon",
+          fallback: "Auto",
+          label: "Icon",
+        });
       }
 
       if (!opts.interactionMode && b.sensor) {
@@ -247,18 +298,15 @@ function sliderTypeFactory(opts) {
         if (hasIconOn) iconOnCond.classList.add("sp-visible");
 
         var iconOnVal = hasIconOn ? b.icon_on : "Auto";
-        var iconOnSection = helpers.iconPickerField(
-          helpers.idPrefix + "icon-on-picker",
-          helpers.idPrefix + "icon-on",
-          iconOnVal,
-          function (opt) {
-            b.icon_on = opt;
-            helpers.saveField("icon_on", opt);
-          },
-          opts.iconOnFieldLabel
-        );
+        var iconOnSection = helpers.renderCardIconPicker(iconOnCond, b, helpers, {
+          pickerIdSuffix: "icon-on-picker",
+          idSuffix: "icon-on",
+          field: "icon_on",
+          value: iconOnVal,
+          fallback: "Auto",
+          label: opts.iconOnFieldLabel,
+        });
         var iconOnPicker = iconOnSection.querySelector(".sp-icon-picker");
-        iconOnCond.appendChild(iconOnSection);
 
         panel.appendChild(iconOnCond);
 
@@ -280,12 +328,10 @@ function sliderTypeFactory(opts) {
     renderPreview: function (b, helpers) {
       var label = b.label || b.entity || opts.fallbackLabel;
       var iconName = b.icon && b.icon !== "Auto" ? iconSlug(b.icon) : opts.fallbackIcon;
-      if (opts.interactionMode && (b.sensor === "toggle" || coverCommandMode(b.sensor))) {
+      if (opts.interactionMode && (b.sensor === "modal" || b.sensor === "toggle" || coverCommandMode(b.sensor))) {
         return {
           iconHtml: '<span class="sp-btn-icon mdi mdi-' + iconName + '"></span>',
-          labelHtml:
-            '<span class="sp-btn-label-row"><span class="sp-btn-label">' + helpers.escHtml(label) + '</span>' +
-            '<span class="sp-type-badge mdi mdi-' + opts.badgeIcon + '"></span></span>',
+          labelHtml: cardBadgeLabelHtml(helpers, label, metadata.preview.badge),
         };
       }
       return {
@@ -294,35 +340,35 @@ function sliderTypeFactory(opts) {
           '<span class="sp-slider-preview"><span class="sp-slider-track">' +
             '<span class="sp-slider-fill"></span>' +
           '</span></span>',
-        labelHtml:
-          '<span class="sp-btn-label-row"><span class="sp-btn-label">' + helpers.escHtml(label) + '</span>' +
-          '<span class="sp-type-badge mdi mdi-' + opts.badgeIcon + '"></span></span>',
+        labelHtml: cardBadgeLabelHtml(helpers, label, metadata.preview.badge),
       };
     },
   };
 }
 
 registerButtonType("light_brightness", sliderTypeFactory({
-  label: "Light Brightness",
+  type: "light_brightness",
   placeholder: "e.g. Living Room",
   entityPlaceholder: "e.g. light.living_room",
-  entityDomains: ["light"],
-  defaultIcon: "Auto",
-  defaultIconOn: "Auto",
-  fallbackLabel: "Light Brightness",
+  defaultIcon: "Lightbulb Outline",
+  defaultIconOn: "Lightbulb",
+  fallbackLabel: "Brightness",
   fallbackIcon: "lightbulb",
   badgeIcon: "tune-vertical-variant",
   alwaysShowIconPair: true,
-  onIconInheritsOff: true,
+  onIconInheritsOff: false,
   iconOffFieldLabel: "Off Icon",
   iconOnFieldLabel: "On Icon",
+  hideLabel: true,
+  renderLabelInSettings: true,
+  labelAfterEntity: true,
+  lightControlType: true,
 }));
 
 registerButtonType("slider", sliderTypeFactory({
-  label: "Slider",
+  type: "slider",
   placeholder: "e.g. Living Room",
   entityPlaceholder: "e.g. light.living_room",
-  entityDomains: ["light", "fan"],
   defaultIcon: "Auto",
   defaultIconOn: "Auto",
   fallbackLabel: "Slider",
@@ -335,10 +381,9 @@ registerButtonType("slider", sliderTypeFactory({
 }));
 
 registerButtonType("cover", sliderTypeFactory({
-  label: "Cover",
+  type: "cover",
   placeholder: "e.g. Office Blind",
   entityPlaceholder: "e.g. cover.office_blind",
-  entityDomains: ["cover"],
   defaultIcon: "Blinds",
   defaultIconOn: "Blinds Open",
   fallbackLabel: "Cover",

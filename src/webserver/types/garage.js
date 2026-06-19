@@ -3,8 +3,14 @@ function garageCommandMode(mode) {
   return mode === "open" || mode === "close";
 }
 
+function garageModeOptionValues() {
+  var spec = cardContractOptionSpec("garage", "garage_mode");
+  return spec && spec.values ? spec.values.slice() : ["", "open", "close"];
+}
+
 function normalizeGarageMode(mode) {
-  return garageCommandMode(mode) ? mode : "";
+  mode = String(mode || "");
+  return garageModeOptionValues().indexOf(mode) >= 0 ? mode : "";
 }
 
 function garageModeDefaultIcon(mode) {
@@ -21,10 +27,54 @@ function garageUsesDefaultIcon(icon) {
   return !icon || icon === "Auto" || icon === "Garage" || icon === "Garage Open";
 }
 
+var GARAGE_CARD_METADATA = {
+  mode: {
+    label: "Interaction",
+    idSuffix: "garage-interaction",
+    options: [
+      ["", "Toggle"],
+      ["open", "Open"],
+      ["close", "Close"],
+    ],
+    value: function (b) {
+      return normalizeGarageMode(b.sensor);
+    },
+  },
+  display: {
+    label: "Display",
+    options: [
+      ["label", "Label"],
+      ["status", "Status"],
+    ],
+  },
+  entity: {
+    label: "Entity",
+    idSuffix: "entity",
+    placeholder: "e.g. cover.garage_door",
+    domains: function () { return cardContractDomains("garage"); },
+    bindName: "entity",
+    rerender: true,
+    requiredMessage: "Add an entity before saving.",
+  },
+  labelField: {
+    label: "Label",
+    idSuffix: "label",
+    field: "label",
+    rerender: true,
+  },
+  preview: {
+    badge: "garage",
+  },
+};
+
 registerButtonType("garage", {
-  label: "Garage Door",
-  allowInSubpage: true,
+  label: function () { return cardContractCardLabel("garage"); },
+  allowInSubpage: function () { return cardContractAllowInSubpage("garage"); },
+  pickerKey: function () { return cardContractPickerKey("garage"); },
+  hidden: function () { return cardContractHidden("garage"); },
   hideLabel: true,
+  defaultConfig: function () { return cardContractDefaultConfig("garage"); },
+  cardMetadata: GARAGE_CARD_METADATA,
   onSelect: function (b) {
     b.label = "";
     b.sensor = "";
@@ -32,6 +82,7 @@ registerButtonType("garage", {
     b.precision = "";
     b.icon = "Garage";
     b.icon_on = "Garage Open";
+    b.options = "";
   },
   renderSettings: function (panel, b, slot, helpers) {
     var mode = normalizeGarageMode(b.sensor);
@@ -41,6 +92,11 @@ registerButtonType("garage", {
     }
     b.unit = "";
     b.precision = "";
+    var normalizedOptions = normalizeGarageOptions(b.options, mode);
+    if (b.options !== normalizedOptions) {
+      b.options = normalizedOptions;
+      helpers.saveField("options", normalizedOptions);
+    }
     if (garageCommandMode(mode) && b.icon_on !== "Auto") {
       b.icon_on = "Auto";
       helpers.saveField("icon_on", "Auto");
@@ -49,80 +105,101 @@ registerButtonType("garage", {
       helpers.saveField("icon_on", "Garage Open");
     }
 
-    var interactionOptions = [
-      ["", "Toggle"],
-      ["open", "Open"],
-      ["close", "Close"],
-    ];
-    var interactionField = helpers.selectField(
-      "Interaction", helpers.idPrefix + "garage-interaction", interactionOptions, mode);
-    var interactionSelect = interactionField.select;
-    panel.appendChild(interactionField.field);
+    helpers.renderCardModeSelector(panel, b, helpers, Object.assign({}, GARAGE_CARD_METADATA, {
+      mode: Object.assign({}, GARAGE_CARD_METADATA.mode, {
+        value: function () { return mode; },
+        onChange: function () {
+          var oldMode = mode;
+          var hadDefaultIcon = garageUsesDefaultIcon(b.icon);
+          mode = normalizeGarageMode(this.value);
+          b.sensor = mode;
+          helpers.saveField("sensor", mode);
+          b.unit = "";
+          b.precision = "";
+          helpers.saveField("unit", "");
+          helpers.saveField("precision", "");
+          b.options = normalizeGarageOptions(b.options, mode);
+          helpers.saveField("options", b.options);
+          if (hadDefaultIcon || b.icon === garageModeDefaultIcon(oldMode)) {
+            b.icon = garageModeDefaultIcon(mode);
+            helpers.saveField("icon", b.icon);
+          }
+          if (garageCommandMode(mode)) {
+            b.icon_on = "Auto";
+          } else if (!b.icon_on || b.icon_on === "Auto") {
+            b.icon_on = "Garage Open";
+          }
+          helpers.saveField("icon_on", b.icon_on);
+          renderButtonSettings();
+        },
+      }),
+    }));
 
-    interactionSelect.addEventListener("change", function () {
-      var oldMode = mode;
-      var hadDefaultIcon = garageUsesDefaultIcon(b.icon);
-      mode = normalizeGarageMode(this.value);
-      b.sensor = mode;
-      helpers.saveField("sensor", mode);
-      b.unit = "";
-      b.precision = "";
-      helpers.saveField("unit", "");
-      helpers.saveField("precision", "");
-      if (hadDefaultIcon || b.icon === garageModeDefaultIcon(oldMode)) {
-        b.icon = garageModeDefaultIcon(mode);
-        helpers.saveField("icon", b.icon);
-      }
-      if (garageCommandMode(mode)) {
-        b.icon_on = "Auto";
-      } else if (!b.icon_on || b.icon_on === "Auto") {
-        b.icon_on = "Garage Open";
-      }
-      helpers.saveField("icon_on", b.icon_on);
-      renderButtonSettings();
-    });
+    var labelHost = document.createElement("div");
+    var labelControl = helpers.renderCardTextField(labelHost, b, helpers, Object.assign({}, GARAGE_CARD_METADATA.labelField, {
+      placeholder: garageCommandMode(mode) ? "e.g. " + garageModeDefaultLabel(mode) + " Garage" : "e.g. Garage Door",
+    }));
 
-    panel.appendChild(helpers.textField(
-      "Label", helpers.idPrefix + "label", b.label,
-      garageCommandMode(mode) ? "e.g. " + garageModeDefaultLabel(mode) + " Garage" : "e.g. Garage Door",
-      "label", true).field);
-
-    function iconField(label, inputSuffix, field, currentVal, defaultVal) {
-      return helpers.iconPickerField(
-        helpers.idPrefix + inputSuffix + "-picker",
-        helpers.idPrefix + inputSuffix,
-        currentVal,
-        function (opt) {
-        b[field] = opt || defaultVal;
-        helpers.saveField(field, b[field]);
-      }, label);
+    function setLabelVisible(value) {
+      labelControl.field.style.display = value === "label" ? "" : "none";
     }
 
-    var entityField = helpers.entityField(
-      "Entity", helpers.idPrefix + "entity", b.entity, "e.g. cover.garage_door",
-      ["cover"], "entity", true, "Add an entity before saving.");
-    panel.appendChild(entityField.field);
+    var labelMode = garageLabelDisplayMode(b);
+    helpers.renderCardSegmentControl(panel, b, helpers, {
+      segment: Object.assign({}, GARAGE_CARD_METADATA.display, {
+        value: function () { return labelMode; },
+        onSelect: function (button, cardHelpers, value) {
+          labelMode = value;
+          setGarageLabelDisplayMode(button, value);
+          cardHelpers.saveField("options", button.options);
+          setLabelVisible(value);
+          scheduleRender();
+        },
+      }),
+    });
+    setLabelVisible(labelMode);
+
+    panel.appendChild(labelControl.field);
+
+    helpers.renderCardEntityField(panel, b, helpers, GARAGE_CARD_METADATA);
 
     var closedIconVal = b.icon && b.icon !== "Auto" ? b.icon : "Garage";
     var iconOnVal = b.icon_on && b.icon_on !== "Auto" ? b.icon_on : "Garage Open";
     if (garageCommandMode(mode)) {
-      panel.appendChild(iconField(
-        "Icon", "icon", "icon", b.icon && b.icon !== "Auto" ? b.icon : garageModeDefaultIcon(mode),
-        garageModeDefaultIcon(mode)));
+      helpers.renderCardIconPicker(panel, b, helpers, {
+        pickerIdSuffix: "icon-picker",
+        idSuffix: "icon",
+        field: "icon",
+        value: b.icon && b.icon !== "Auto" ? b.icon : garageModeDefaultIcon(mode),
+        fallback: garageModeDefaultIcon(mode),
+        label: "Icon",
+      });
     } else {
-      panel.appendChild(iconField("Closed Icon", "icon", "icon", closedIconVal, "Garage"));
-      panel.appendChild(iconField("Open Icon", "icon-on", "icon_on", iconOnVal, "Garage Open"));
+      helpers.renderCardIconPair(panel, b, helpers, {
+        pickerIdSuffix: "icon-picker",
+        idSuffix: "icon",
+        field: "icon",
+        value: closedIconVal,
+        fallback: "Garage",
+        label: "Closed Icon",
+      }, {
+        pickerIdSuffix: "icon-on-picker",
+        idSuffix: "icon-on",
+        field: "icon_on",
+        value: iconOnVal,
+        fallback: "Garage Open",
+        label: "Open Icon",
+      });
     }
   },
   renderPreview: function (b, helpers) {
     var mode = normalizeGarageMode(b.sensor);
-    var iconName = b.icon && b.icon !== "Auto" ? iconSlug(b.icon) : iconSlug(garageModeDefaultIcon(mode));
     var label = b.label || (garageCommandMode(mode) ? garageModeDefaultLabel(mode) : b.entity || "Garage Door");
-    return {
-      iconHtml: '<span class="sp-btn-icon mdi mdi-' + iconName + '"></span>',
-      labelHtml:
-        '<span class="sp-btn-label-row"><span class="sp-btn-label">' + helpers.escHtml(label) + '</span>' +
-        '<span class="sp-type-badge mdi mdi-garage"></span></span>',
-    };
+    if (garageLabelDisplayMode(b) === "status") label = "Closed";
+    return cardBadgePreview(b, helpers, {
+      label: label,
+      iconFallback: garageModeDefaultIcon(mode),
+      badge: GARAGE_CARD_METADATA.preview.badge,
+    });
   },
 });

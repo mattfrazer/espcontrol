@@ -16,15 +16,17 @@ substitutions:
 # ---------------------------------------------------------------------------
 esp32:
   variant: esp32p4
+  # Waveshare documents this panel with 32MB external NOR flash.
   flash_size: 32MB
   cpu_frequency: 360MHZ
   engineering_sample: true
   framework:
     type: esp-idf
-    version: 5.5.2
+    # stick to recommended version, currently 5.5.4, 55.03.39 with tool-esptoolpy 5.3.0. No issues
+    #version: 5.5.2
     # pioarduino 55.03.38-1 pulls tool-esptoolpy 5.2.0, which can install
     # incompletely in ESPHome containers and then fail while creating .bin files.
-    platform_version: 55.03.37
+    #platform_version: 55.03.37
     advanced:
       enable_idf_experimental_features: true
       execute_from_psram: true
@@ -38,6 +40,16 @@ esp32:
       # task stack can trip the stack protector during mbedTLS setup.
       CONFIG_ESP_MAIN_TASK_STACK_SIZE: "8192"
       CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC: "y"
+      # Keep the ESP32 task watchdog long enough for display startup while
+      # remaining compatible with ESPHome 2026.4 and newer.
+      CONFIG_ESP_TASK_WDT_TIMEOUT_S: "30"
+      # ESPHome 2026.5 / ESP-IDF 5.5.2 can make ESP-Hosted preallocate a
+      # large internal DMA buffer pool before ESPHome starts. On P4 display
+      # builds this can fail with "HS_MP: mempool create failed: no mem" and
+      # trigger OTA rollback, so use dynamic buffers and keep hosted task
+      # stacks in PSRAM.
+      CONFIG_ESP_HOSTED_USE_MEMPOOL: "n"
+      CONFIG_ESP_HOSTED_DFLT_TASK_FROM_SPIRAM: "y"
       CONFIG_FREERTOS_THREAD_LOCAL_STORAGE_POINTERS: "1"
       CONFIG_LOG_DEFAULT_LEVEL: "2"
 
@@ -50,8 +62,8 @@ external_components:
       url: ${espcontrol_component_url}
       ref: ${espcontrol_component_ref}
       path: components
-    components: [espcontrol, web_server_idf]
-    refresh: 0s
+    components: [espcontrol, web_server_idf, artwork_image]
+    refresh: 1s
 
 espcontrol:
 
@@ -64,6 +76,11 @@ esphome:
   platformio_options:
     build_flags:
       - "-Wno-deprecated-declarations"
+      - "-DESPCONTROL_DISABLE_TODO=1"
+      - "-DESPCONTROL_MAX_GRID_SLOTS=9"
+      # Force PlatformIO to rebuild cached ESPHome objects after the 2026.5
+      # core/scheduler/watchdog changes; stale 2026.4 objects can boot-loop.
+      - "-DESPCONTROL_ESPHOME_2026_5_REBUILD=1"
     build_src_flags:
       - "-Wno-literal-suffix"
   on_boot:
@@ -88,7 +105,9 @@ esphome:
               [=]() -> bool { return id(relay_2).state; });
     - priority: -100
       then:
+        - lambda: 'id(screen_rotation_ready) = true;'
         - script.execute: apply_screen_rotation
+        - script.execute: clock_bar_apply
 
 # ---------------------------------------------------------------------------
 # PSRAM (video frame buffer memory)
@@ -101,7 +120,33 @@ psram:
 # ---------------------------------------------------------------------------
 ota:
   - platform: esphome
+    on_begin:
+      then:
+        - script.execute: show_update_writing
+        - script.wait: show_update_writing
+    on_end:
+      then:
+        - globals.set:
+            id: firmware_update_complete_pending
+            value: 'true'
+        - lambda: 'global_preferences->sync();'
+    on_error:
+      then:
+        - script.execute: show_update_failed
   - platform: http_request
+    on_begin:
+      then:
+        - script.execute: show_update_writing
+        - script.wait: show_update_writing
+    on_end:
+      then:
+        - globals.set:
+            id: firmware_update_complete_pending
+            value: 'true'
+        - lambda: 'global_preferences->sync();'
+    on_error:
+      then:
+        - script.execute: show_update_failed
 
 # ---------------------------------------------------------------------------
 # Shared infrastructure (API, logging, web server, restart button)
@@ -148,8 +193,13 @@ light:
         - if:
             condition:
               lambda: |-
-                return id(screen_schedule_asleep) ||
-                       (id(schedule_enabled).state && !panel_time_or_fallback(id(panel_time).now(), id(homeassistant_time).now()).is_valid());
+                auto now = panel_time_or_fallback(id(panel_time).now(), id(homeassistant_time).now());
+                return (id(screen_schedule_asleep) &&
+                        !id(schedule_mode_clock)) ||
+                       screen_schedule_waiting_for_time(
+                         id(screen_schedule_trigger).state,
+                         id(schedule_enabled).state,
+                         now.is_valid());
             then:
               - script.execute: backlight_force_display_off
             else:
@@ -158,6 +208,17 @@ light:
                     lambda: 'return id(screensaver_display_off_active);'
                   then:
                     - script.execute: screensaver_wake
+    on_turn_off:
+      then:
+        - if:
+            condition:
+              lambda: |-
+                return !id(display_asleep) &&
+                       !id(screen_schedule_asleep) &&
+                       !id(screensaver_display_off_active) &&
+                       !id(screensaver_dimmed_active);
+            then:
+              - script.execute: screen_schedule_manual_sleep
 
 # ---------------------------------------------------------------------------
 # Built-in relays (ESP32-P4-86-Panel-ETH-2RO bottom board)
@@ -206,25 +267,6 @@ button:
     on_press:
       then:
         - script.execute: relay_2_push
-
-# ---------------------------------------------------------------------------
-# I2C bus and touchscreen (GT911 capacitive, wakes screensaver on touch)
-# ---------------------------------------------------------------------------
-i2c:
-  - id: bus_a
-    sda: GPIO07
-    scl: GPIO08
-    frequency: 400kHz
-    sda_pullup_enabled: False
-    scl_pullup_enabled: False
-
-touchscreen:
-  - platform: gt911
-    id: my_touchscreen
-    display: my_display
-    i2c_id: bus_a
-    on_touch:
-      - script.execute: screensaver_wake
 
 # ---------------------------------------------------------------------------
 # Display (4" 720x720 MIPI DSI panel)
@@ -288,7 +330,7 @@ script:
 
 select:
   - platform: template
-    name: "Screen: Rotation"
+    name: "${entity_screen_rotation}"
     internal: true
     disabled_by_default: true
     id: screen_rotation_select
@@ -296,7 +338,7 @@ select:
     icon: "mdi:screen-rotation"
     optimistic: true
     restore_value: true
-    initial_option: "180"
+    initial_option: "0"
     options:
       - "0"
       - "90"
@@ -304,4 +346,9 @@ select:
       - "270"
     on_value:
       then:
-        - script.execute: apply_screen_rotation
+        - if:
+            condition:
+              lambda: 'return id(screen_rotation_ready);'
+            then:
+              - script.execute: apply_screen_rotation
+              - script.execute: clock_bar_apply

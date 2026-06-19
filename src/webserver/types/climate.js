@@ -1,27 +1,67 @@
 // Climate card: thermostat status plus full-screen climate controls.
+var CLIMATE_CARD_METADATA = {
+  entity: {
+    label: "Climate Entity",
+    idSuffix: "entity",
+    placeholder: "e.g. climate.living_room",
+    domains: function () { return cardContractDomains("climate"); },
+    bindName: "entity",
+    rerender: true,
+    requiredMessage: "Add a climate entity before saving.",
+  },
+  labelDisplay: {
+    label: "Label Display",
+    options: [
+      ["label", "Label"],
+      ["status", "Status"],
+      ["actual", "Actual Temp"],
+      ["target", "Target Temp"],
+    ],
+  },
+  numberDisplay: {
+    label: "Icon & Temperatures",
+    options: [
+      ["icon", "Icon"],
+      ["actual", "Actual Temp"],
+      ["target", "Target Temp"],
+    ],
+  },
+  largeNumbers: {
+    label: "Large Temperature Numbers",
+    idSuffix: "large-temperature-numbers",
+    supported: function (b) {
+      return climateNumberDisplayMode(b) !== "icon";
+    },
+  },
+  preview: {
+    badge: "thermostat",
+  },
+};
+
 registerButtonType("climate", {
-  label: "Climate",
-  allowInSubpage: true,
+  label: function () { return cardContractCardLabel("climate"); },
+  allowInSubpage: function () { return cardContractAllowInSubpage("climate"); },
+  pickerKey: function () { return cardContractPickerKey("climate"); },
+  hidden: function () { return cardContractHidden("climate"); },
   hideLabel: true,
   labelPlaceholder: "e.g. Living Room",
-  experimental: "climate",
+  defaultConfig: function () { return cardContractDefaultConfig("climate"); },
+  cardMetadata: CLIMATE_CARD_METADATA,
   onSelect: function (b) {
     b.entity = "";
-    b.label = "";
+    b.label = "Climate";
     b.sensor = "";
     b.unit = "";
     b.precision = "";
     b.icon = "Thermostat";
     b.icon_on = "Auto";
+    b.options = "";
   },
   renderSettings: function (panel, b, slot, helpers) {
     b.sensor = "";
     b.unit = "";
     if (!b.icon) b.icon = "Thermostat";
-    if (b.icon_on !== "Auto") {
-      b.icon_on = "Auto";
-      helpers.saveField("icon_on", "Auto");
-    }
+    if (!b.icon_on) b.icon_on = "Auto";
     var climateConfig = parseClimatePrecisionConfig(b.precision);
     var normalizedPrecision = climatePrecisionConfig(
       climateConfig.precision,
@@ -33,22 +73,69 @@ registerButtonType("climate", {
       helpers.saveField("precision", normalizedPrecision);
     }
 
-    var entityField = helpers.entityField(
-      "Climate Entity", helpers.idPrefix + "entity", b.entity,
-      "e.g. climate.living_room", ["climate"], "entity", true,
-      "Add a climate entity before saving.");
-    panel.appendChild(entityField.field);
+    helpers.renderCardEntityField(panel, b, helpers, CLIMATE_CARD_METADATA);
 
-    panel.appendChild(helpers.textField(
-      "Label", helpers.idPrefix + "label", b.label, "e.g. Living Room", "label", true).field);
+    var labelField = condField();
+    labelField.classList.add("sp-climate-settings-gap");
+    helpers.renderCardTextField(labelField, b, helpers, {
+      label: "Label",
+      idSuffix: "label",
+      field: "label",
+      placeholder: "Climate",
+      rerender: true,
+    });
+    function syncLabelField() {
+      labelField.classList.toggle("sp-visible", climateLabelDisplayMode(b) === "label");
+    }
 
-    panel.appendChild(helpers.iconPickerField(
-      helpers.idPrefix + "climate-icon-picker", helpers.idPrefix + "climate-icon",
-      b.icon || "Thermostat", function (opt) {
-        b.icon = opt;
-        helpers.saveField("icon", opt);
-      }, "Icon"
-    ));
+    var labelDisplayField = helpers.renderCardSegmentControl(panel, b, helpers, {
+      segment: Object.assign({}, CLIMATE_CARD_METADATA.labelDisplay, {
+        value: function () { return climateLabelDisplayMode(b); },
+        onSelect: function (button, cardHelpers, value) {
+          setClimateLabelDisplayMode(button, value);
+          cardHelpers.saveField("options", button.options);
+          syncLabelField();
+          scheduleRender();
+        },
+      }),
+    });
+    syncLabelField();
+    panel.appendChild(labelField);
+
+    var numberDisplayField = helpers.renderCardSegmentControl(panel, b, helpers, {
+      segment: Object.assign({}, CLIMATE_CARD_METADATA.numberDisplay, {
+        value: function () { return climateNumberDisplayMode(b); },
+        onSelect: function (button, cardHelpers, value) {
+          setClimateNumberDisplayMode(button, value);
+          cardHelpers.saveField("options", button.options);
+          syncIconFields();
+          scheduleRender();
+        },
+      }),
+    });
+    var iconFields = condField();
+    iconFields.classList.add("sp-climate-settings-gap");
+    helpers.renderCardIconPicker(iconFields, b, helpers, {
+      pickerIdSuffix: "climate-icon-picker",
+      idSuffix: "climate-icon",
+      field: "icon",
+      fallback: "Thermostat",
+      label: "Off Icon",
+      onChange: function () { scheduleRender(); },
+    });
+    helpers.renderCardIconPicker(iconFields, b, helpers, {
+      pickerIdSuffix: "climate-icon-on-picker",
+      idSuffix: "climate-icon-on",
+      field: "icon_on",
+      fallback: "Auto",
+      label: "On Icon",
+      onChange: function () { scheduleRender(); },
+    });
+    function syncIconFields() {
+      iconFields.classList.toggle("sp-visible", climateNumberDisplayMode(b) === "icon");
+    }
+    syncIconFields();
+    panel.appendChild(iconFields);
 
     var precisionField = helpers.selectField("Unit Precision", helpers.idPrefix + "climate-precision", [
       ["", "10"],
@@ -62,6 +149,7 @@ registerButtonType("climate", {
     }
     precision.addEventListener("change", saveClimateAdvancedSettings);
     panel.appendChild(precisionField.field);
+    helpers.renderCardLargeNumbersToggle(panel, b, helpers, CLIMATE_CARD_METADATA);
 
     var hasRange = !!(climateConfig.min || climateConfig.max);
     var advancedToggleSection = helpers.toggleSection(
@@ -75,13 +163,13 @@ registerButtonType("climate", {
     if (hasRange) advanced.classList.add("sp-visible");
 
     var minField = helpers.textField(
-      "Minimum Temperature", helpers.idPrefix + "climate-min", climateConfig.min, "e.g. 16");
+      "Minimum Temperature", helpers.idPrefix + "climate-min", climateConfig.min, "e.g. -25");
     var minInp = minField.input;
     minInp.inputMode = "decimal";
     advanced.appendChild(minField.field);
 
     var maxField = helpers.textField(
-      "Maximum Temperature", helpers.idPrefix + "climate-max", climateConfig.max, "e.g. 30");
+      "Maximum Temperature", helpers.idPrefix + "climate-max", climateConfig.max, "e.g. 5");
     var maxInp = maxField.input;
     maxInp.inputMode = "decimal";
     advanced.appendChild(maxField.field);
@@ -101,13 +189,36 @@ registerButtonType("climate", {
     panel.appendChild(advanced);
   },
   renderPreview: function (b, helpers) {
-    var label = (b.label && b.label.trim()) || (b.entity && b.entity.trim()) || "Climate";
-    var iconName = b.icon && b.icon !== "Auto" ? iconSlug(b.icon) : "thermostat";
+    var climateConfig = parseClimatePrecisionConfig(b.precision);
+    var prec = parseInt(climateConfig.precision || "0", 10) || 0;
+    var unit = temperatureUnitSymbol();
+    var actualVal = (21).toFixed(prec);
+    var targetVal = (20).toFixed(prec);
+    var numberMode = climateNumberDisplayMode(b);
+    var numberVal = numberMode === "actual" ? actualVal : targetVal;
+    var labelMode = climateLabelDisplayMode(b);
+    var label = (b.label && b.label.trim()) || "Climate";
+    if (labelMode === "status") {
+      label = "Idle";
+    } else if (labelMode === "actual") {
+      label = actualVal + unit;
+    } else if (labelMode === "target") {
+      label = targetVal + unit;
+    }
+    function climateLabelHtml() {
+      return cardBadgeLabelHtml(helpers, label, CLIMATE_CARD_METADATA.preview.badge);
+    }
+    if (numberMode === "icon") {
+      var iconName = b.icon && b.icon !== "Auto" ? b.icon : "Thermostat";
+      return {
+        iconHtml: '<span class="sp-btn-icon mdi mdi-' + iconSlug(iconName) + '"></span>',
+        labelHtml: climateLabelHtml(),
+      };
+    }
     return {
-      iconHtml: '<span class="sp-btn-icon mdi mdi-' + iconName + '"></span>',
-      labelHtml:
-        '<span class="sp-btn-label-row"><span class="sp-btn-label">' +
-        helpers.escHtml(label) + '</span><span class="sp-type-badge mdi mdi-thermostat"></span></span>',
+      buttonClass: "sp-climate-temp-card",
+      iconHtml: cardSensorPreviewHtml(b, helpers, numberVal, unit),
+      labelHtml: climateLabelHtml(),
     };
   },
 });

@@ -17,6 +17,10 @@ packages:
   espcontrol: !include ../devices/guition-esp32-s3-4848s040/packages.yaml
 
 wifi:
+  # Compile-only station credentials for CI/local builds. User-imported
+  # deployed configs supply their real WiFi credentials in device YAML.
+  ssid: "ESPControl"
+  password: "espcontrol"
   ap:
     ssid: "${friendly_name}"
 

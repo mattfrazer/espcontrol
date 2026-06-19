@@ -5,19 +5,10 @@ const fs = require("fs");
 const path = require("path");
 
 const ROOT = path.resolve(__dirname, "..");
-const SOURCE = path.join(ROOT, "src", "webserver", "www.js");
+const SOURCE = path.join(ROOT, "src", "webserver", "entry.js");
 const MODULES_DIR = path.join(ROOT, "src", "webserver", "modules");
 const TYPES_DIR = path.join(ROOT, "src", "webserver", "types");
-
-const WEB_MODULE_ORDER = [
-  "styles",
-  "state",
-  "grid",
-  "api",
-  "config_codec",
-  "controls",
-  "app",
-];
+const WEB_MODULE_ORDER = require("./web_modules.json");
 
 function indentChunk(text) {
   return text.trimEnd().split(/\r?\n/).map((line) => {

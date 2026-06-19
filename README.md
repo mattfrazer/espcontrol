@@ -27,7 +27,8 @@ EspControl works with devices and helpers that are already in Home Assistant, in
 - Lights, switches, fans, and plugs
 - Scenes, scripts, buttons, and automations
 - Blinds, shutters, covers, and garage doors
-- Climate controls
+- Media players for playback, volume, progress, and now-playing display
+- Climate controls for thermostats and HVAC devices
 - Sensors such as temperature, humidity, power, battery, or custom text states
 - Weather, clocks, dates, and time zones
 - Built-in relays on supported panels
@@ -69,9 +70,15 @@ See the [screen guides](https://jtenniswood.github.io/espcontrol/getting-started
 - **Drag-and-drop layout** - move controls around without editing files.
 - **Subpages** - make folder-like pages for rooms or groups of controls.
 - **Different card sizes** - make important controls larger and keep smaller items compact.
+- **Dedicated card types** - Switch, Lights, Action, Option Select, Webhook, Trigger, Sensor, Doors & Windows, Presence, Slider, Fans, Vacuum, Cover, Garage Door, Lock, Alarm, Date & Time, World Clock, Weather, Camera, Media, Climate, Internal Switches, Screen Lock, and Subpage.
+- **Home Assistant action support** - run scenes, scripts, automations, buttons, webhooks, and helper changes directly from the panel.
+- **Camera and media displays** - show camera images, media player state, album art, playback controls, volume, and progress.
+- **Display scheduling** - use idle timers, night schedules, brightness controls, and optional presence sensors so the screen behaves well in real rooms.
+- **Appearance controls** - choose icons, labels, status text, colours, clock display, rotation, and temperature units from the setup page.
 - **Screensaver and brightness controls** - dim or sleep the display when it is not in use.
-- **Automatic updates** - keep firmware current over WiFi after the first install.
+- **Automatic updates** - keep standard firmware current after the first install.
 - **Backup and restore** - save your layout and copy it to another panel.
+- **Language support** - choose the panel language, with translation files available for contributors.
 
 ## What You Need
 
@@ -87,7 +94,32 @@ See the [screen guides](https://jtenniswood.github.io/espcontrol/getting-started
 - [Install guide](https://jtenniswood.github.io/espcontrol/getting-started/install)
 - [FAQ](https://jtenniswood.github.io/espcontrol/reference/faq)
 - [Report a bug or request a feature](https://github.com/jtenniswood/espcontrol/issues)
-- [Maintainer notes: display sizing](docs/development/display-sizing.md)
+
+## Contributor Checks
+
+After changing card configuration, the web setup page, or generated device files, run:
+
+- `npm run check:product`
+- `npm run check:fast`
+- `npm run check:web-browser-smoke`
+- `npm run docs:build`
+
+Use `npm run check:product` as the focused product preflight when changing shared schema,
+card behavior, web setup behavior, device metadata, generated outputs, backup compatibility,
+or release-facing metadata.
+
+See [Product Source Map](product/README.md) for the files that should be edited by hand
+and the generated outputs that should be rebuilt instead of manually changed.
+
+## License
+
+EspControl is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE).
+
+In plain terms, you can view, change, and share the software for non-commercial purposes. Commercial use needs separate permission from the project owner.
+
+This is a source-available non-commercial license rather than an OSI-approved open source license, because the standard open source definition does not allow restrictions on commercial use.
+
+Required notice: see [NOTICE](NOTICE).
 
 ## Support This Project
 

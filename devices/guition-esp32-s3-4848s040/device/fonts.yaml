@@ -1,24 +1,35 @@
 # =============================================================================
-# FONTS (DEVICE OVERRIDE) - Smaller fonts for the 480x480 square display
+# FONTS - Generic style IDs for the 480x480 square display
 # =============================================================================
-# Supplements the common fonts with smaller variants for the main UI.
-# These _sm variants are referenced by the device theme, LVGL config, and
-# setup screens.
-# Hebrew glyphs are pulled from gfonts://Heebo via `extras`, since Roboto
-# does not include the Hebrew block.
+# Feature YAML should reference these functional style IDs, not physical font
+# names or sizes. Sizes remain device-specific behind the same style names.
 # =============================================================================
 
 font:
-  # Button icons (44px, proportional to 66px on the 720x720 square panel)
+  # Main action/setup icons
   - file: 'https://github.com/Templarian/MaterialDesign-Webfont/raw/v7.4.47/fonts/materialdesignicons-webfont.ttf'
-    id: icon_font_sm
+    id: font_icon_main
     size: 44
     bpp: 4
     glyphs: !include ../../../common/assets/icon_glyphs.yaml
 
-  # Button labels (22px)
+  # Smaller card icons
+  - file: 'https://github.com/Templarian/MaterialDesign-Webfont/raw/v7.4.47/fonts/materialdesignicons-webfont.ttf'
+    id: font_icon_card
+    size: 33
+    bpp: 4
+    glyphs: !include ../../../common/assets/climate_card_icon_glyphs.yaml
+
+  # Status, network, and subpage icons
+  - file: 'https://github.com/Templarian/MaterialDesign-Webfont/raw/v7.4.47/fonts/materialdesignicons-webfont.ttf'
+    id: font_icon_status
+    size: 24
+    bpp: 4
+    glyphs: !include ../../../common/assets/network_status_glyphs.yaml
+
+  # Main labels and setup body text
   - file: "gfonts://Roboto"
-    id: label_font_sm
+    id: font_text_body
     size: 22
     bpp: 4
     glyphs: !include ../../../common/assets/text_glyphs.yaml
@@ -26,27 +37,9 @@ font:
       - file: "gfonts://Heebo"
         glyphs: !include ../../../common/assets/hebrew_glyphs.yaml
 
-  # Sensor value large number (44px, proportional to 66px on the 720x720 square panel)
+  # Headings and media titles
   - file: "gfonts://Roboto@Light"
-    id: statistics_font_sm
-    size: 44
-    bpp: 4
-    glyphs:
-      - "0123456789.-°/%"
-      - ":"
-
-  # Large-card sensor values (2.5x the regular sensor value font)
-  - file: "gfonts://Roboto@Thin"
-    id: statistics_font_sm_xl
-    size: 110
-    bpp: 4
-    glyphs:
-      - "0123456789.-°/%"
-      - ":"
-
-  # Media now-playing titles (sensor value size, full text glyph coverage)
-  - file: "gfonts://Roboto@Light"
-    id: media_title_font_sm
+    id: font_text_title
     size: 34
     bpp: 4
     glyphs: !include ../../../common/assets/text_glyphs.yaml
@@ -54,29 +47,47 @@ font:
       - file: "gfonts://Heebo@Light"
         glyphs: !include ../../../common/assets/hebrew_glyphs.yaml
 
-  # Top bar clock and temperature (20px)
-  - file: "gfonts://Roboto"
-    id: clockbar_font_sm
-    size: 20
+  # Media cover-art screensaver title
+  - file: "gfonts://Roboto@Light"
+    id: font_cover_art_title
+    size: 70
     bpp: 4
+    glyphs: !include ../../../common/assets/text_glyphs.yaml
     extras:
-      - file: "gfonts://Heebo"
+      - file: "gfonts://Heebo@Light"
         glyphs: !include ../../../common/assets/hebrew_glyphs.yaml
 
-  # Top bar network status icon
-  - file: 'https://github.com/Templarian/MaterialDesign-Webfont/raw/v7.4.47/fonts/materialdesignicons-webfont.ttf'
-    id: network_status_font_sm
-    size: 19
+  # Media cover-art screensaver artist
+  - file: "gfonts://Roboto@Light"
+    id: font_cover_art_artist
+    size: 40
     bpp: 4
-    glyphs: !include ../../../common/assets/network_status_glyphs.yaml
+    glyphs: !include ../../../common/assets/text_glyphs.yaml
+    extras:
+      - file: "gfonts://Heebo@Light"
+        glyphs: !include ../../../common/assets/hebrew_glyphs.yaml
 
-  # Setup screen icons (61px, proportional to 92px on the 720x720 square panel)
-  - file: 'https://github.com/Templarian/MaterialDesign-Webfont/raw/v7.4.47/fonts/materialdesignicons-webfont.ttf'
-    id: icon_font_setup_sm
-    size: 61
+  # Media cover-art screensaver elapsed time
+  - file: "gfonts://Roboto"
+    id: font_cover_art_time
+    size: 20
+    bpp: 4
+    glyphs: " 0123456789:/-"
+
+  # Normal sensor values
+  - file: "gfonts://Roboto@Light"
+    id: font_number_value
+    size: 44
     bpp: 4
     glyphs:
-      - "\U000F05A9"  # mdi-wifi
-      - "\U000F0200"  # mdi-ethernet
-      - "\U000F0493"  # mdi-cog
-      - "\U000F07D0"  # mdi-home-assistant
+      - "0123456789.-°/%"
+      - ":"
+
+  # Large sensor values
+  - file: "gfonts://Roboto@Thin"
+    id: font_number_value_large
+    size: 110
+    bpp: 4
+    glyphs:
+      - "0123456789.-°/%"
+      - ":"

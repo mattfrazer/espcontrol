@@ -3,12 +3,28 @@ function internalRelayOptions() {
   return (CFG.features && CFG.features.internalRelays) || [];
 }
 
+function internalRelaySpec() {
+  var card = cardContractCard("internal");
+  return card && card.behavior && card.behavior.internalRelay || {};
+}
+
+function internalRelayModeOptionValues() {
+  var spec = cardContractOptionSpec("internal", "internal_mode");
+  return spec && spec.values ? spec.values.slice() : ["switch", "push"];
+}
+
+function normalizeInternalRelayMode(mode) {
+  mode = String(mode || "");
+  return internalRelayModeOptionValues().indexOf(mode) >= 0 ? mode : "switch";
+}
+
 function internalRelayDefaultIcon(mode) {
-  return mode === "push" ? "Gesture Tap" : "Lightbulb Outline";
+  var icons = internalRelaySpec().defaultIcons || {};
+  return icons[normalizeInternalRelayMode(mode)] || (mode === "push" ? "Gesture Tap" : "Lightbulb Outline");
 }
 
 function internalRelayDefaultOnIcon() {
-  return "Lightbulb";
+  return internalRelaySpec().defaultIconOn || "Lightbulb";
 }
 
 function internalRelayUsesDefaultIcon(mode, icon) {
@@ -21,7 +37,7 @@ function internalRelayUsesDefaultOnIcon(icon) {
 }
 
 function internalRelayMode(b) {
-  return b.sensor === "push" ? "push" : "switch";
+  return normalizeInternalRelayMode(b && b.sensor === "push" ? "push" : "switch");
 }
 
 function internalRelayLabelFor(key) {
@@ -41,10 +57,58 @@ function ensureInternalRelaySelection(b) {
   b.entity = relays[0].key;
 }
 
+function renderInternalRelayField(panel, b, helpers) {
+  ensureInternalRelaySelection(b);
+  var relays = internalRelayOptions();
+  var relayField = helpers.selectField(
+    "Internal Relay",
+    helpers.idPrefix + "internal-relay",
+    relays.length ? relays.map(function (relay) {
+      return { value: relay.key, label: relay.label };
+    }) : [["", "No relays"]],
+    relays.length ? b.entity : ""
+  );
+  var relaySelect = relayField.select;
+  relaySelect.disabled = !relays.length;
+  relaySelect.addEventListener("change", function () {
+    b.entity = this.value;
+    helpers.saveField("entity", b.entity);
+  });
+  panel.appendChild(relayField.field);
+}
+
+var INTERNAL_CARD_METADATA = {
+  mode: {
+    label: "Mode",
+    inputId: "internal-mode",
+    options: [
+      ["switch", "Switch"],
+      ["push", "Push Button"],
+    ],
+    value: internalRelayMode,
+  },
+  labelField: {
+    label: "Label",
+    idSuffix: "label",
+    field: "label",
+    placeholder: "e.g. Porch Light",
+    rerender: true,
+  },
+  preview: {
+    switchBadge: "power-plug",
+    pushBadge: "gesture-tap",
+  },
+};
+
 registerButtonType("internal", {
-  label: "Internal Switches",
-  allowInSubpage: true,
+  label: function () { return cardContractCardLabel("internal"); },
+  allowInSubpage: function () { return cardContractAllowInSubpage("internal"); },
+  pickerKey: function () { return cardContractPickerKey("internal"); },
+  hidden: function () { return cardContractHidden("internal"); },
+  hideLabel: true,
   labelPlaceholder: "e.g. Porch Light",
+  defaultConfig: function () { return cardContractDefaultConfig("internal"); },
+  cardMetadata: INTERNAL_CARD_METADATA,
   isAvailable: function () {
     return internalRelayOptions().length > 0;
   },
@@ -56,52 +120,46 @@ registerButtonType("internal", {
     b.icon = internalRelayDefaultIcon("switch");
     b.icon_on = internalRelayDefaultOnIcon();
   },
+  renderSettingsBeforeLabel: function (panel, b, slot, helpers) {
+    renderInternalRelayField(panel, b, helpers);
+  },
   renderSettings: function (panel, b, slot, helpers) {
     ensureInternalRelaySelection(b);
-    var relays = internalRelayOptions();
     var mode = internalRelayMode(b);
     if (internalRelayUsesDefaultIcon(mode, b.icon)) b.icon = internalRelayDefaultIcon(mode);
     if (mode === "switch" && internalRelayUsesDefaultOnIcon(b.icon_on)) {
       b.icon_on = internalRelayDefaultOnIcon();
     }
 
-    var relayField = helpers.selectField(
-      "Internal Relay",
-      helpers.idPrefix + "internal-relay",
-      relays.length ? relays.map(function (relay) {
-        return { value: relay.key, label: relay.label };
-      }) : [["", "No relays"]],
-      relays.length ? b.entity : ""
-    );
-    var relaySelect = relayField.select;
-    relaySelect.disabled = !relays.length;
-    relaySelect.addEventListener("change", function () {
-      b.entity = this.value;
-      helpers.saveField("entity", b.entity);
+    var modeControl = helpers.renderCardSegmentControl(panel, b, helpers, {
+      segment: Object.assign({}, INTERNAL_CARD_METADATA.mode, {
+        inputId: helpers.idPrefix + "internal-mode",
+        value: function () { return mode; },
+        onSelect: function (button, cardHelpers, value) { setMode(value); },
+      }),
     });
-    panel.appendChild(relayField.field);
-
-    var modeControl = helpers.segmentControl([
-      ["switch", "Switch"],
-      ["push", "Push Button"],
-    ], mode, function (value) { setMode(value); });
     var switchBtn = modeControl.buttons.switch;
     var pushBtn = modeControl.buttons.push;
-    panel.appendChild(helpers.fieldWithControl("Mode", helpers.idPrefix + "internal-mode", modeControl.segment));
+    helpers.renderCardTextField(panel, b, helpers, INTERNAL_CARD_METADATA.labelField);
 
     function makeLabeledIconPicker(label, inputSuffix, pickerSuffix, value, onSelect) {
-      var section = helpers.iconPickerField(
-        helpers.idPrefix + pickerSuffix,
-        helpers.idPrefix + inputSuffix,
-        value,
-        onSelect,
-        label
-      );
+      var section = helpers.renderCardIconPicker(document.createElement("div"), b, helpers, {
+        pickerIdSuffix: pickerSuffix,
+        idSuffix: inputSuffix,
+        field: inputSuffix === "icon-on" ? "icon_on" : "icon",
+        value: value,
+        fallback: value || "Auto",
+        label: label,
+        onChange: function (button, cardHelpers, nextValue) {
+          onSelect(nextValue);
+        },
+      });
       var picker = section.querySelector(".sp-icon-picker");
       return { section: section, picker: picker };
     }
 
     function syncPicker(picker, value) {
+      if (!picker) return;
       var preview = picker.querySelector(".sp-icon-picker-preview");
       if (preview) preview.className = "sp-icon-picker-preview mdi mdi-" + iconSlug(value);
       var input = picker.querySelector(".sp-icon-picker-input");
@@ -178,12 +236,10 @@ registerButtonType("internal", {
     var mode = internalRelayMode(b);
     var label = b.label || internalRelayLabelFor(b.entity);
     var iconName = b.icon && b.icon !== "Auto" ? iconSlug(b.icon) : iconSlug(internalRelayDefaultIcon(mode));
-    var badge = mode === "push" ? "gesture-tap" : "power-plug";
+    var badge = mode === "push" ? INTERNAL_CARD_METADATA.preview.pushBadge : INTERNAL_CARD_METADATA.preview.switchBadge;
     return {
       iconHtml: '<span class="sp-btn-icon mdi mdi-' + iconName + '"></span>',
-      labelHtml:
-        '<span class="sp-btn-label-row"><span class="sp-btn-label">' + helpers.escHtml(label) + '</span>' +
-        '<span class="sp-type-badge mdi mdi-' + badge + '"></span></span>',
+      labelHtml: cardBadgeLabelHtml(helpers, label, badge),
     };
   },
 });

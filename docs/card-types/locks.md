@@ -30,12 +30,12 @@ A Lock card controls a Home Assistant `lock` entity. It can work as a state-awar
 
 ## Opening or Unlatching
 
-Some locks support Home Assistant's optional `lock.open` action, usually to unlatch a door. Use an [Action](/card-types/actions) card with **Open Lock** when you need that command.
+Lock cards handle locking and unlocking. If your lock hardware has a separate open or unlatch command, create a Home Assistant script for that command and run the script with an [Action](/card-types/actions) card.
 
 ## Locks That Need a Code
 
 EspControl does not store lock PINs or codes on the panel. If your lock requires a code, create a Home Assistant script that handles the code securely, then use an [Action](/card-types/actions) card to run that script.
 
 ::: info Requires Home Assistant actions
-Lock cards send Home Assistant actions from the panel. If tapping a card does nothing, check [Home Assistant Actions](/getting-started/home-assistant-actions).
+Lock cards send Home Assistant actions from the panel. If tapping a card does nothing, check [Enable Actions](/getting-started/home-assistant-actions).
 :::

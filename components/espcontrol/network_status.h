@@ -4,23 +4,28 @@
 #pragma once
 
 #include <cmath>
-#include <cstdio>
 #include <cstdlib>
 #include <string>
 #include "esphome/components/network/ip_address.h"
 #include "esphome/components/network/util.h"
+#include "i18n_generated.h"
 
+constexpr const char *NETWORK_ICON_WIFI_OUTLINE = "\U000F092F";
 constexpr const char *NETWORK_ICON_WIFI_1 = "\U000F091F";
 constexpr const char *NETWORK_ICON_WIFI_2 = "\U000F0922";
 constexpr const char *NETWORK_ICON_WIFI_3 = "\U000F0925";
 constexpr const char *NETWORK_ICON_WIFI_4 = "\U000F0928";
+constexpr const char *NETWORK_ICON_WIFI_OFF_OUTLINE = "\U000F092E";
 constexpr const char *NETWORK_ICON_ETHERNET = "\U000F0200";
 
 struct NetworkStatusModalUi {
   lv_obj_t *overlay = nullptr;
   lv_obj_t *panel = nullptr;
-  lv_obj_t *back_btn = nullptr;
-  lv_obj_t *table = nullptr;
+  lv_obj_t *close_btn = nullptr;
+  lv_obj_t *content = nullptr;
+  lv_obj_t *device_name_lbl = nullptr;
+  lv_obj_t *ip_lbl = nullptr;
+  lv_obj_t *firmware_lbl = nullptr;
 };
 
 inline NetworkStatusModalUi &network_status_modal_ui() {
@@ -28,22 +33,20 @@ inline NetworkStatusModalUi &network_status_modal_ui() {
   return ui;
 }
 
-inline uint32_t network_status_parse_color(const std::string &hex, uint32_t fallback) {
-  if (hex.length() != 6) return fallback;
-  char *end = nullptr;
-  uint32_t value = strtoul(hex.c_str(), &end, 16);
-  return end && *end == '\0' ? value : fallback;
-}
-
 inline const char *network_status_wifi_icon(float pct) {
-  if (!std::isfinite(pct) || pct < 25.0f) return NETWORK_ICON_WIFI_1;
+  if (!std::isfinite(pct) || pct <= 0.0f) return NETWORK_ICON_WIFI_OUTLINE;
+  if (pct < 25.0f) return NETWORK_ICON_WIFI_1;
   if (pct < 50.0f) return NETWORK_ICON_WIFI_2;
   if (pct < 75.0f) return NETWORK_ICON_WIFI_3;
   return NETWORK_ICON_WIFI_4;
 }
 
-inline void network_status_set_wifi_icon(lv_obj_t *label, float pct) {
+inline void network_status_set_wifi_icon(lv_obj_t *label, float pct, bool connected) {
   if (!label) return;
+  if (!connected) {
+    lv_label_set_text(label, NETWORK_ICON_WIFI_OFF_OUTLINE);
+    return;
+  }
   lv_label_set_text(label, network_status_wifi_icon(pct));
 }
 
@@ -56,7 +59,8 @@ inline void network_status_update_visibility(lv_obj_t *button, lv_obj_t *main_pa
                                              bool clock_bar_enabled,
                                              bool network_status_enabled) {
   if (!button) return;
-  if (clock_bar_enabled && network_status_enabled && lv_scr_act() == main_page_obj) {
+  if (clock_bar_enabled && network_status_enabled &&
+      clock_bar_active_on_button_grid_page(main_page_obj)) {
     lv_obj_clear_flag(button, LV_OBJ_FLAG_HIDDEN);
   } else {
     lv_obj_add_flag(button, LV_OBJ_FLAG_HIDDEN);
@@ -70,33 +74,21 @@ inline std::string network_status_ip_address() {
     ips[0].str_to(ip_buf);
     return ip_buf;
   }
-  return "Not available";
+  return espcontrol_i18n(std::string("Not available"));
 }
 
-inline std::string network_status_wifi_strength_text(float pct) {
-  if (!std::isfinite(pct)) return "Not available";
-  if (pct < 0.0f) pct = 0.0f;
-  if (pct > 100.0f) pct = 100.0f;
-  char buf[12];
-  snprintf(buf, sizeof(buf), "%d%%", (int)(pct + 0.5f));
-  return buf;
+inline std::string network_status_trim_copy(const std::string &value) {
+  const size_t first = value.find_first_not_of(" \t\r\n");
+  if (first == std::string::npos) return "";
+  const size_t last = value.find_last_not_of(" \t\r\n");
+  return value.substr(first, last - first + 1);
 }
 
-inline std::string network_status_uptime_text(float seconds) {
-  if (!std::isfinite(seconds) || seconds < 0.0f) return "Not available";
-  uint32_t total = (uint32_t)(seconds + 0.5f);
-  uint32_t days = total / 86400U;
-  uint32_t hours = (total % 86400U) / 3600U;
-  uint32_t minutes = (total % 3600U) / 60U;
-  char buf[24];
-  if (days > 0) {
-    snprintf(buf, sizeof(buf), "%ud %02uh %02um", days, hours, minutes);
-  } else if (hours > 0) {
-    snprintf(buf, sizeof(buf), "%uh %02um", hours, minutes);
-  } else {
-    snprintf(buf, sizeof(buf), "%um", minutes);
-  }
-  return buf;
+inline std::string network_status_firmware_label(const std::string &version) {
+  std::string trimmed = network_status_trim_copy(version);
+  if (trimmed.empty()) return espcontrol_i18n(std::string("Version unknown"));
+  if (trimmed == "dev" || trimmed == "Dev" || trimmed == "0.0.0") return espcontrol_i18n(std::string("Dev build"));
+  return trimmed;
 }
 
 inline void network_status_clean_obj(lv_obj_t *obj) {
@@ -113,132 +105,79 @@ inline void network_status_hide_modal() {
   if (ui.overlay) lv_obj_del(ui.overlay);
   ui.overlay = nullptr;
   ui.panel = nullptr;
-  ui.back_btn = nullptr;
-  ui.table = nullptr;
+  ui.close_btn = nullptr;
+  ui.content = nullptr;
+  ui.device_name_lbl = nullptr;
+  ui.ip_lbl = nullptr;
+  ui.firmware_lbl = nullptr;
+  control_modal_clear_active(ControlModalKind::NETWORK_STATUS);
 }
 
-inline lv_obj_t *network_status_add_table_label(lv_obj_t *parent,
-                                                const char *text,
-                                                const lv_font_t *font,
-                                                lv_coord_t width,
-                                                uint32_t color) {
+inline lv_obj_t *network_status_add_center_label(lv_obj_t *parent,
+                                                 const char *text,
+                                                 const lv_font_t *font,
+                                                 lv_coord_t width,
+                                                 uint32_t color) {
   lv_obj_t *label = lv_label_create(parent);
   lv_label_set_text(label, text ? text : "");
   lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
   lv_obj_set_width(label, width);
   lv_obj_set_style_text_color(label, lv_color_hex(color), LV_PART_MAIN);
+  lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
   if (font) lv_obj_set_style_text_font(label, font, LV_PART_MAIN);
   return label;
 }
 
-inline void network_status_add_table_row(lv_obj_t *table,
-                                         const char *name,
-                                         const std::string &value,
-                                         const lv_font_t *font,
-                                         lv_coord_t row_w,
-                                         lv_coord_t name_w,
-                                         lv_coord_t value_w,
-                                         lv_coord_t row_gap) {
-  if (!table) return;
-
-  lv_obj_t *row = lv_obj_create(table);
-  network_status_clean_obj(row);
-  lv_obj_set_width(row, row_w);
-  lv_obj_set_height(row, LV_SIZE_CONTENT);
-  lv_obj_set_style_pad_column(row, row_gap, LV_PART_MAIN);
-  lv_obj_set_layout(row, LV_LAYOUT_FLEX);
-  lv_obj_set_style_flex_flow(row, LV_FLEX_FLOW_ROW, LV_PART_MAIN);
-  lv_obj_set_style_flex_cross_place(row, LV_FLEX_ALIGN_START, LV_PART_MAIN);
-
-  lv_obj_t *name_lbl = network_status_add_table_label(row, name, font, name_w, 0xA0A0A0);
-  lv_label_set_long_mode(name_lbl, LV_LABEL_LONG_DOT);
-  lv_obj_t *value_lbl = network_status_add_table_label(row, value.c_str(), font, value_w, 0xFFFFFF);
-  lv_obj_set_style_text_align(value_lbl, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
-}
-
-inline void network_status_add_device_name(lv_obj_t *table,
-                                           const std::string &device_name,
-                                           const lv_font_t *font,
-                                           lv_coord_t width) {
-  if (!table) return;
-  lv_obj_t *label = network_status_add_table_label(
-    table,
-    device_name.empty() ? "Not available" : device_name.c_str(),
-    font,
-    width,
-    0xFFFFFF);
-  lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
-}
-
 inline void network_status_open_modal(const std::string &device_name,
                                       const std::string &ip_address,
-                                      const std::string &wifi_strength,
-                                      float uptime_seconds,
                                       const std::string &firmware_version,
-                                      const lv_font_t *label_font,
-                                      const lv_font_t *device_name_font,
-                                      const lv_font_t *icon_font,
-                                      const std::string &panel_color_hex) {
-  media_volume_hide_modal();
-  climate_control_hide_modal();
-  switch_confirmation_hide_modal();
-  network_status_hide_modal();
+                                      const lv_font_t *text_font,
+                                      const lv_font_t *icon_font) {
+  ControlModalShell shell = control_modal_open_shell(
+    ControlModalKind::NETWORK_STATUS, nullptr, 100, icon_font,
+    "\U000F0156", true, network_status_hide_modal);
   NetworkStatusModalUi &ui = network_status_modal_ui();
+  ui.overlay = shell.overlay;
+  ui.panel = shell.panel;
+  ui.close_btn = shell.close_btn;
 
-  ControlModalLayout layout = control_modal_calc_layout(100);
-  lv_coord_t radius = control_modal_card_radius(nullptr);
-  lv_coord_t table_w = layout.panel_w - layout.inset * 2;
-  if (table_w < 120) table_w = layout.panel_w;
-  lv_coord_t row_gap = control_modal_scaled_px(18, layout.short_side);
-  if (row_gap < 10) row_gap = 10;
-  lv_coord_t name_w = table_w * 38 / 100;
-  lv_coord_t value_w = table_w - name_w - row_gap;
-  if (value_w < table_w / 2) value_w = table_w / 2;
-  lv_coord_t table_top = layout.inset + layout.back_size +
-    control_modal_scaled_px(12, layout.short_side);
-  lv_coord_t table_h = layout.panel_h - table_top - layout.inset;
-  if (table_h < 120) table_h = layout.panel_h - layout.inset * 2;
+  ControlModalLayout &layout = shell.layout;
+  lv_coord_t content_w = shell.content_w;
+  lv_obj_t *close_label = lv_obj_get_child(ui.close_btn, 0);
+  if (close_label) lv_obj_set_style_text_color(close_label, lv_color_hex(DARK_TEXT_PRIMARY), LV_PART_MAIN);
 
-  ui.overlay = lv_obj_create(lv_layer_top());
-  control_modal_style_overlay(ui.overlay);
+  ui.content = lv_obj_create(ui.panel);
+  network_status_clean_obj(ui.content);
+  lv_obj_set_width(ui.content, content_w);
+  lv_obj_set_height(ui.content, LV_SIZE_CONTENT);
+  lv_obj_set_style_pad_row(ui.content, control_modal_scaled_px(12, layout.short_side), LV_PART_MAIN);
+  lv_obj_set_layout(ui.content, LV_LAYOUT_FLEX);
+  lv_obj_set_style_flex_flow(ui.content, LV_FLEX_FLOW_COLUMN, LV_PART_MAIN);
+  lv_obj_set_style_flex_main_place(ui.content, LV_FLEX_ALIGN_CENTER, LV_PART_MAIN);
+  lv_obj_set_style_flex_cross_place(ui.content, LV_FLEX_ALIGN_CENTER, LV_PART_MAIN);
 
-  uint32_t panel_color = network_status_parse_color(panel_color_hex, 0x212121);
-  ui.panel = lv_obj_create(ui.overlay);
-  control_modal_style_panel(ui.panel, panel_color, radius);
-  control_modal_apply_panel_layout(ui.overlay, ui.panel, layout, radius);
+  ui.device_name_lbl = network_status_add_center_label(
+    ui.content,
+    device_name.empty() ? espcontrol_i18n("Not available") : device_name.c_str(),
+    text_font,
+    content_w,
+    DARK_TEXT_PRIMARY);
+  ui.ip_lbl = network_status_add_center_label(
+    ui.content,
+    ip_address.empty() ? espcontrol_i18n("Not available") : ip_address.c_str(),
+    text_font,
+    content_w,
+    DARK_TEXT_MUTED);
+  std::string firmware_label = network_status_firmware_label(firmware_version);
+  ui.firmware_lbl = network_status_add_center_label(
+    ui.content,
+    firmware_label.c_str(),
+    text_font,
+    content_w,
+    DARK_TEXT_MUTED);
+  lv_obj_update_layout(ui.content);
+  lv_obj_align(ui.content, LV_ALIGN_CENTER, 0, 0);
 
-  ui.back_btn = control_modal_create_round_button(ui.panel, 32, "\U000F0141",
-    icon_font, 0x454545, panel_color, 100);
-  lv_obj_set_style_bg_opa(ui.back_btn, LV_OPA_TRANSP, LV_PART_MAIN);
-  lv_obj_set_style_border_width(ui.back_btn, 0, LV_PART_MAIN);
-  lv_obj_t *back_label = lv_obj_get_child(ui.back_btn, 0);
-  if (back_label) lv_obj_set_style_text_color(back_label, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-  lv_obj_add_event_cb(ui.back_btn, [](lv_event_t *) {
-    network_status_hide_modal();
-  }, LV_EVENT_CLICKED, nullptr);
-  control_modal_apply_back_button_layout(ui.back_btn, layout);
-
-  ui.table = lv_obj_create(ui.panel);
-  network_status_clean_obj(ui.table);
-  lv_obj_set_size(ui.table, table_w, table_h);
-  lv_obj_set_style_pad_row(ui.table, control_modal_scaled_px(14, layout.short_side), LV_PART_MAIN);
-  lv_obj_set_layout(ui.table, LV_LAYOUT_FLEX);
-  lv_obj_set_style_flex_flow(ui.table, LV_FLEX_FLOW_COLUMN, LV_PART_MAIN);
-  lv_obj_align(ui.table, LV_ALIGN_TOP_MID, 0, table_top);
-
-  std::string uptime = network_status_uptime_text(uptime_seconds);
-  std::string firmware = firmware_version.empty() ? "Not available" : firmware_version;
-  network_status_add_device_name(ui.table, device_name,
-    device_name_font ? device_name_font : label_font, table_w);
-  network_status_add_table_row(ui.table, "IP address", ip_address,
-    label_font, table_w, name_w, value_w, row_gap);
-  network_status_add_table_row(ui.table, "WiFi strength", wifi_strength,
-    label_font, table_w, name_w, value_w, row_gap);
-  network_status_add_table_row(ui.table, "Uptime", uptime,
-    label_font, table_w, name_w, value_w, row_gap);
-  network_status_add_table_row(ui.table, "Firmware version", firmware,
-    label_font, table_w, name_w, value_w, row_gap);
-
-  lv_obj_move_foreground(ui.back_btn);
+  lv_obj_move_foreground(ui.close_btn);
   lv_obj_move_foreground(ui.overlay);
 }

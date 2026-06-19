@@ -12,11 +12,89 @@
 #include "esphome/components/web_server_idf/web_server_idf.h"
 #endif
 
-constexpr uint32_t DEFAULT_SLIDER_COLOR = 0xFF8C00;
-constexpr uint32_t DEFAULT_OFF_COLOR = 0x313131;
-constexpr uint32_t DEFAULT_TERTIARY_COLOR = 0x212121;
-constexpr int MAX_GRID_SLOTS = 25;
+// RGB multipliers for display calibration; 100 leaves a channel unchanged.
+constexpr int COLOR_CORRECTION_RED_PERCENT = 100;
+constexpr int COLOR_CORRECTION_GREEN_PERCENT = 100;
+constexpr int COLOR_CORRECTION_BLUE_PERCENT = 100;
+
+constexpr uint32_t clamp_color_channel(uint32_t value) {
+  return value > 255 ? 255 : value;
+}
+
+constexpr uint32_t correct_display_color(
+    uint32_t rgb, int red_percent, int green_percent, int blue_percent) {
+  uint32_t red = clamp_color_channel(((rgb >> 16) & 0xFF) * red_percent / 100);
+  uint32_t green = clamp_color_channel(((rgb >> 8) & 0xFF) * green_percent / 100);
+  uint32_t blue = clamp_color_channel((rgb & 0xFF) * blue_percent / 100);
+  return (red << 16) | (green << 8) | blue;
+}
+
+constexpr uint32_t correct_display_color(uint32_t rgb) {
+  return correct_display_color(
+    rgb, COLOR_CORRECTION_RED_PERCENT, COLOR_CORRECTION_GREEN_PERCENT,
+    COLOR_CORRECTION_BLUE_PERCENT);
+}
+
+static_assert(correct_display_color(0x123456, 100, 100, 100) == 0x123456,
+              "neutral colour correction must not change RGB values");
+static_assert(correct_display_color(0x123456, 0, 100, 100) == 0x003456,
+              "red correction must only adjust the red channel");
+static_assert(correct_display_color(0x123456, 100, 0, 100) == 0x120056,
+              "green correction must only adjust the green channel");
+static_assert(correct_display_color(0x123456, 100, 100, 0) == 0x123400,
+              "blue correction must only adjust the blue channel");
+
+inline std::function<void()> &dashboard_content_changed_callback() {
+  static std::function<void()> callback;
+  return callback;
+}
+
+inline void set_dashboard_content_changed_callback(std::function<void()> callback) {
+  dashboard_content_changed_callback() = std::move(callback);
+}
+
+inline void notify_dashboard_content_changed() {
+  auto &callback = dashboard_content_changed_callback();
+  if (callback) callback();
+}
+static_assert(correct_display_color(0xF0F0F0, 200, 200, 200) == 0xFFFFFF,
+              "colour correction must clamp channels at 255");
+
+constexpr uint32_t DEFAULT_SLIDER_COLOR = correct_display_color(0xFF8C00);
+constexpr uint32_t DEFAULT_OFF_COLOR = correct_display_color(0x313131);
+constexpr uint32_t DEFAULT_TERTIARY_COLOR = correct_display_color(0x212121);
+constexpr uint32_t DARK_BACKGROUND_SECONDARY = DEFAULT_OFF_COLOR;
+constexpr uint32_t DARK_BACKGROUND_TERTIARY = DEFAULT_TERTIARY_COLOR;
+constexpr uint32_t DARK_TEXT_PRIMARY = 0xFFFFFF;
+constexpr uint32_t DARK_TEXT_MUTED = 0xB0B0B0;
+constexpr uint32_t DARK_TEXT_SOFT = 0xEFEFEF;
+constexpr uint32_t DARK_BORDER = correct_display_color(0x3A3A3A);
+constexpr uint32_t DARK_CONTROL_NEUTRAL = correct_display_color(0x424242);
+constexpr uint32_t DARK_OVERLAY = 0x000000;
+constexpr uint32_t DARK_TRACK_BACKGROUND = correct_display_color(0x2F2F2F);
+#ifndef ESPCONTROL_MAX_GRID_SLOTS
+#define ESPCONTROL_MAX_GRID_SLOTS 25
+#endif
+
+constexpr int MAX_GRID_SLOTS = ESPCONTROL_MAX_GRID_SLOTS;
+static_assert(MAX_GRID_SLOTS > 0, "ESPCONTROL_MAX_GRID_SLOTS must be positive");
 constexpr int MAX_SUBPAGE_ITEMS = MAX_GRID_SLOTS * MAX_GRID_SLOTS;
+constexpr const char *SENSOR_STATE_LABELS_OPTION = "state_labels";
+constexpr const char *SENSOR_STATE_INPUT_OPTION = "state_input";
+constexpr const char *SENSOR_STATE_OUTPUT_OPTION = "state_output";
+constexpr const char *SENSOR_STATE_INPUT_2_OPTION = "state_input_2";
+constexpr const char *SENSOR_STATE_OUTPUT_2_OPTION = "state_output_2";
+constexpr const char *SENSOR_STATE_LOW_LABEL_OPTION = "state_low_label";
+constexpr const char *SENSOR_STATE_HIGH_LABEL_OPTION = "state_high_label";
+constexpr const char *IMAGE_LABEL_OPTION = "image_label";
+constexpr const char *IMAGE_ICON_OPTION = "image_icon";
+constexpr const char *IMAGE_MODAL_MODE_OPTION = "image_modal_mode";
+constexpr const char *IMAGE_REFRESH_OPTION = "image_refresh";
+constexpr const char *IMAGE_REFRESH_MODE_OPTION = "image_refresh_mode";
+
+#include "button_grid_contract_generated.h"
+#include "button_grid_card_runtime.h"
+#include <cstdlib>
 
 inline int bounded_grid_slots(int num_slots) {
   if (num_slots < 0) return 0;
@@ -32,7 +110,122 @@ struct BtnSlot {
   lv_obj_t *sensor_container;       // flex row shown when sensor overlay is active
   lv_obj_t *sensor_lbl;             // numeric sensor value
   lv_obj_t *unit_lbl;               // unit suffix (°C, %, etc.)
+  lv_obj_t *subpage_lbl = nullptr;  // small chevron marker for subpage cards
 };
+
+struct ParsedCfg;
+inline void set_card_checked_state(lv_obj_t *btn, bool checked);
+
+struct ScreenLockCardRef {
+  lv_obj_t *btn = nullptr;
+  lv_obj_t *icon_lbl = nullptr;
+  lv_obj_t *text_lbl = nullptr;
+  const char *locked_icon = nullptr;
+  const char *unlocked_icon = nullptr;
+};
+
+inline bool &screen_lock_enabled() {
+  static bool locked = false;
+  return locked;
+}
+
+inline std::vector<lv_obj_t *> &screen_lock_controlled_buttons() {
+  static std::vector<lv_obj_t *> buttons;
+  return buttons;
+}
+
+inline std::vector<ScreenLockCardRef> &screen_lock_card_refs() {
+  static std::vector<ScreenLockCardRef> refs;
+  return refs;
+}
+
+inline std::vector<lv_obj_t *> &screen_lock_clickable_objects() {
+  static std::vector<lv_obj_t *> objects;
+  return objects;
+}
+
+inline void screen_lock_reset_registry() {
+  screen_lock_controlled_buttons().clear();
+  screen_lock_card_refs().clear();
+  screen_lock_clickable_objects().clear();
+}
+
+inline bool screen_lock_button_is_lock_card(lv_obj_t *btn) {
+  for (const auto &ref : screen_lock_card_refs()) {
+    if (ref.btn == btn) return true;
+  }
+  return false;
+}
+
+inline void screen_lock_register_controlled_button(lv_obj_t *btn) {
+  if (!btn) return;
+  auto &buttons = screen_lock_controlled_buttons();
+  if (std::find(buttons.begin(), buttons.end(), btn) == buttons.end()) {
+    buttons.push_back(btn);
+  }
+}
+
+inline void screen_lock_register_card(const BtnSlot &s, const ParsedCfg &p);
+
+inline void screen_lock_clear_clickable_tree(lv_obj_t *obj) {
+  if (!obj) return;
+  auto &clickable = screen_lock_clickable_objects();
+  if (lv_obj_has_flag(obj, LV_OBJ_FLAG_CLICKABLE)) {
+    lv_obj_clear_flag(obj, LV_OBJ_FLAG_CLICKABLE);
+    if (std::find(clickable.begin(), clickable.end(), obj) == clickable.end()) {
+      clickable.push_back(obj);
+    }
+  }
+  int32_t child_count = static_cast<int32_t>(lv_obj_get_child_cnt(obj));
+  for (int32_t i = 0; i < child_count; i++) {
+    screen_lock_clear_clickable_tree(lv_obj_get_child(obj, i));
+  }
+}
+
+inline void screen_lock_apply() {
+  bool locked = screen_lock_enabled();
+  if (screen_lock_card_refs().empty()) {
+    locked = false;
+    screen_lock_enabled() = false;
+  }
+
+  auto &clickable = screen_lock_clickable_objects();
+  for (lv_obj_t *btn : screen_lock_controlled_buttons()) {
+    if (!btn || screen_lock_button_is_lock_card(btn)) continue;
+    if (locked) {
+      screen_lock_clear_clickable_tree(btn);
+    }
+  }
+  if (!locked) {
+    for (lv_obj_t *obj : clickable) {
+      if (obj) lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
+    }
+    clickable.clear();
+  }
+
+  for (const auto &ref : screen_lock_card_refs()) {
+    if (!ref.btn) continue;
+    set_card_checked_state(ref.btn, locked);
+    lv_obj_add_flag(ref.btn, LV_OBJ_FLAG_CLICKABLE);
+    if (ref.icon_lbl) {
+      const char *icon = locked ? ref.locked_icon : ref.unlocked_icon;
+      lv_label_set_text(ref.icon_lbl, icon ? icon : "");
+    }
+    if (ref.text_lbl) {
+      lv_label_set_text(ref.text_lbl,
+        locked ? espcontrol_i18n("Screen Locked") : espcontrol_i18n("Screen Unlocked"));
+    }
+  }
+}
+
+inline void screen_lock_set_enabled(bool locked) {
+  screen_lock_enabled() = locked;
+  screen_lock_apply();
+}
+
+inline void screen_lock_toggle() {
+  screen_lock_set_enabled(!screen_lock_enabled());
+}
 
 // Extract the Nth semicolon-delimited field from a config string
 inline std::string cfg_field(const std::string &cfg, int idx) {
@@ -65,11 +258,14 @@ inline int hex_digit(char c) {
   return -1;
 }
 
-inline std::string decode_compact_field(const std::string &value) {
+inline std::string decode_compact_field(const std::string &value, size_t start, size_t len) {
+  if (start > value.size()) return "";
+  size_t end = start + len;
+  if (end < start || end > value.size()) end = value.size();
   std::string out;
-  out.reserve(value.size());
-  for (size_t i = 0; i < value.size(); i++) {
-    if (value[i] == '%' && i + 2 < value.size()) {
+  out.reserve(end - start);
+  for (size_t i = start; i < end; i++) {
+    if (value[i] == '%' && i + 2 < end) {
       int hi = hex_digit(value[i + 1]);
       int lo = hex_digit(value[i + 2]);
       if (hi >= 0 && lo >= 0) {
@@ -83,6 +279,30 @@ inline std::string decode_compact_field(const std::string &value) {
   return out;
 }
 
+inline std::string decode_compact_field(const std::string &value) {
+  return decode_compact_field(value, 0, value.size());
+}
+
+inline char compact_hex_char(uint8_t value) {
+  return value < 10 ? static_cast<char>('0' + value)
+                    : static_cast<char>('A' + value - 10);
+}
+
+inline std::string encode_compact_field(const std::string &value) {
+  std::string out;
+  out.reserve(value.size());
+  for (unsigned char ch : value) {
+    if (ch == '%' || ch == ',' || ch == ';' || ch == '|' || ch == ':') {
+      out.push_back('%');
+      out.push_back(compact_hex_char((ch >> 4) & 0x0F));
+      out.push_back(compact_hex_char(ch & 0x0F));
+    } else {
+      out.push_back(static_cast<char>(ch));
+    }
+  }
+  return out;
+}
+
 // Structured view of a button config string: entity;label;icon;icon_on;sensor;unit;type;precision;options
 struct ParsedCfg {
   std::string entity;      // 0  HA entity_id, internal relay key, or timezone option
@@ -91,41 +311,548 @@ struct ParsedCfg {
   std::string icon_on;     // 3  icon name for on state (blank = no swap)
   std::string sensor;      // 4  sensor entity, cover mode, or action name for Action cards
   std::string unit;        // 5  unit suffix for sensor display
-  std::string type;        // 6  button type: "" (toggle), action, sensor, calendar, timezone, weather_forecast, slider, light_brightness, cover, garage, lock, media, climate, push, internal, subpage
+  std::string type;        // 6  button type: "" (toggle), action, sensor, calendar, timezone, weather_forecast, slider, light_brightness, light_switch, fan_*, cover, garage, lock, alarm, alarm_action, media, climate, push, webhook, todo, internal, subpage
   std::string precision;   // 7  decimal places for sensors; "text" = text sensor mode
   std::string options;     // 8  comma-delimited card options
 };
 
-inline bool card_large_numbers_supported(const ParsedCfg &p) {
-  return (p.type == "sensor" && p.precision != "text") ||
-    (p.type == "weather" && (p.precision == "today" || p.precision == "tomorrow")) ||
-    p.type == "calendar" ||
-    p.type == "timezone";
+inline bool brightness_slider_type(const std::string &type) {
+  return card_runtime_brightness_slider_type(type);
 }
 
-inline bool brightness_slider_type(const std::string &type) {
-  return type == "slider" || type == "light_brightness";
+inline bool fan_card_type(const std::string &type) {
+  return card_runtime_fan_card_type(type);
+}
+
+inline const char *fan_card_default_icon_name(const std::string &type) {
+  return card_runtime_fan_default_icon_name(type);
+}
+
+inline bool action_card_option_select_action(const std::string &action) {
+  return card_runtime_option_select_action(action);
+}
+
+inline bool action_card_option_select(const ParsedCfg &p) {
+  return p.type == "action" && action_card_option_select_action(p.sensor);
+}
+
+inline bool cfg_option_token_present(const std::string &options, const char *name) {
+  if (!name || !*name || options.empty()) return false;
+  size_t start = 0;
+  while (start <= options.length()) {
+    size_t end = options.find(',', start);
+    if (end == std::string::npos) end = options.length();
+    if (options.compare(start, end - start, name) == 0) return true;
+    start = end + 1;
+  }
+  return false;
+}
+
+inline std::string cfg_option_value(const std::string &options, const char *name) {
+  if (!name || !*name || options.empty()) return "";
+  std::string prefix = std::string(name) + "=";
+  size_t start = 0;
+  while (start <= options.length()) {
+    size_t end = options.find(',', start);
+    if (end == std::string::npos) end = options.length();
+    if (options.compare(start, prefix.length(), prefix) == 0) {
+      return decode_compact_field(options.substr(start + prefix.length(), end - start - prefix.length()));
+    }
+    start = end + 1;
+  }
+  return "";
+}
+
+inline bool large_numbers_explicitly_disabled(const std::string &options) {
+  return cfg_option_value(options, "large_numbers") == "off";
+}
+
+inline void append_large_numbers_option(std::string &out, const std::string &options) {
+  std::string value;
+  if (large_numbers_explicitly_disabled(options)) {
+    value = "large_numbers=off";
+  } else if (cfg_option_token_present(options, "large_numbers")) {
+    value = "large_numbers";
+  }
+  if (value.empty()) return;
+  if (!out.empty()) out += ",";
+  out += value;
+}
+
+inline int normalize_media_volume_max_percent(const std::string &value) {
+  if (value.empty()) return 100;
+  char *end = nullptr;
+  long parsed = std::strtol(value.c_str(), &end, 10);
+  if (end == value.c_str()) return 100;
+  if (parsed < 1) return 1;
+  if (parsed > 100) return 100;
+  return static_cast<int>(parsed);
+}
+
+inline std::string media_card_options_normalized(const std::string &options,
+                                                 const std::string &mode) {
+  if (mode != "volume" && mode != "position") return "";
+  std::string out;
+  int max_pct = normalize_media_volume_max_percent(
+    cfg_option_value(options, "volume_max"));
+  if (mode == "volume" && max_pct < 100) {
+    out = "volume_max=" + std::to_string(max_pct);
+  }
+  append_large_numbers_option(out, options);
+  return out;
+}
+
+inline std::string normalize_image_refresh_interval(const std::string &value) {
+  return value == "10" || value == "30" || value == "60" || value == "300"
+    ? value
+    : "off";
+}
+
+inline std::string normalize_image_refresh_mode(const std::string &value) {
+  return value == "timer" ? "timer" : "changes_timer";
+}
+
+inline std::string normalize_image_modal_mode(const std::string &value) {
+  return value == "fit" ? "fit" : "fill";
+}
+
+inline std::string image_card_options_normalized(const std::string &options) {
+  std::string out;
+  if (cfg_option_token_present(options, IMAGE_LABEL_OPTION)) {
+    out = IMAGE_LABEL_OPTION;
+  }
+  if (cfg_option_token_present(options, IMAGE_ICON_OPTION)) {
+    if (!out.empty()) out += ",";
+    out += IMAGE_ICON_OPTION;
+  }
+  std::string modal_mode = normalize_image_modal_mode(
+    cfg_option_value(options, IMAGE_MODAL_MODE_OPTION));
+  if (modal_mode != "fill") {
+    if (!out.empty()) out += ",";
+    out += std::string(IMAGE_MODAL_MODE_OPTION) + "=" + modal_mode;
+  }
+  return out;
+}
+
+inline uint32_t image_card_refresh_interval_ms(const ParsedCfg &p) {
+  (void) p;
+  return 0;
+}
+
+inline bool image_card_timer_only_refresh(const ParsedCfg &p) {
+  (void) p;
+  return false;
+}
+
+inline bool image_card_label_enabled(const ParsedCfg &p) {
+  return cfg_option_token_present(p.options, IMAGE_LABEL_OPTION);
+}
+
+inline bool image_card_icon_enabled(const ParsedCfg &p) {
+  return cfg_option_token_present(p.options, IMAGE_ICON_OPTION);
+}
+
+inline bool image_card_modal_fit_enabled(const ParsedCfg &p) {
+  return normalize_image_modal_mode(
+    cfg_option_value(p.options, IMAGE_MODAL_MODE_OPTION)) == "fit";
+}
+
+inline std::string sensor_card_options_normalized(const std::string &options,
+                                                  const std::string &precision) {
+  std::string out;
+  if (precision != "icon" && precision != "text" &&
+      (cfg_option_token_present(options, "large_numbers") ||
+       large_numbers_explicitly_disabled(options))) {
+    append_large_numbers_option(out, options);
+  }
+  if (cfg_option_token_present(options, "active_color")) {
+    if (!out.empty()) out += ",";
+    out += "active_color";
+  }
+  if (precision == "text" && cfg_option_token_present(options, SENSOR_STATE_LABELS_OPTION)) {
+    if (!out.empty()) out += ",";
+    out += SENSOR_STATE_LABELS_OPTION;
+    std::string input = cfg_option_value(options, SENSOR_STATE_INPUT_OPTION);
+    std::string output = cfg_option_value(options, SENSOR_STATE_OUTPUT_OPTION);
+    if (input.empty() && !cfg_option_value(options, SENSOR_STATE_HIGH_LABEL_OPTION).empty()) {
+      input = "high";
+      output = cfg_option_value(options, SENSOR_STATE_HIGH_LABEL_OPTION);
+    } else if (input.empty() && !cfg_option_value(options, SENSOR_STATE_LOW_LABEL_OPTION).empty()) {
+      input = "low";
+      output = cfg_option_value(options, SENSOR_STATE_LOW_LABEL_OPTION);
+    }
+    if (!input.empty()) {
+      out += ",";
+      out += std::string(SENSOR_STATE_INPUT_OPTION) + "=" + encode_compact_field(input);
+    }
+    if (!output.empty()) {
+      out += ",";
+      out += std::string(SENSOR_STATE_OUTPUT_OPTION) + "=" + encode_compact_field(output);
+    }
+    std::string input_2 = cfg_option_value(options, SENSOR_STATE_INPUT_2_OPTION);
+    std::string output_2 = cfg_option_value(options, SENSOR_STATE_OUTPUT_2_OPTION);
+    if (!input_2.empty()) {
+      out += ",";
+      out += std::string(SENSOR_STATE_INPUT_2_OPTION) + "=" + encode_compact_field(input_2);
+    }
+    if (!output_2.empty()) {
+      out += ",";
+      out += std::string(SENSOR_STATE_OUTPUT_2_OPTION) + "=" + encode_compact_field(output_2);
+    }
+  }
+  return out;
+}
+
+inline std::string normalize_subpage_kind(const std::string &value) {
+  return value == "lights" || value == "media" ||
+    value == "climate" || value == "presence" ||
+    value == "switch" || value == "alarm" ||
+    value == "cover" || value == "garage" ||
+    value == "lock" || value == "vacuum" ||
+    value == "weather" || value == "sensor" ||
+    value == "image" ? value : "";
+}
+
+inline std::string subpage_card_options_normalized(const std::string &options,
+                                                   const std::string &sensor,
+                                                   const std::string &precision) {
+  std::string out;
+  std::string kind = normalize_subpage_kind(cfg_option_value(options, "subpage_kind"));
+  if (!kind.empty()) out = "subpage_kind=" + kind;
+  if (!sensor.empty() && sensor != "indicator" && precision != "text" &&
+      (cfg_option_token_present(options, "large_numbers") ||
+       large_numbers_explicitly_disabled(options))) {
+    append_large_numbers_option(out, options);
+  }
+  return out;
+}
+
+inline std::string normalize_door_window_subtype(const std::string &value) {
+  return value == "window" ? "window" : "door";
+}
+
+inline const char *door_window_closed_icon_name(const std::string &subtype) {
+  return normalize_door_window_subtype(subtype) == "window" ? "Window Closed" : "Door";
+}
+
+inline const char *door_window_open_icon_name(const std::string &subtype) {
+  return normalize_door_window_subtype(subtype) == "window" ? "Window Open" : "Door Open";
+}
+
+inline std::string door_window_card_options_normalized(const std::string &options) {
+  return cfg_option_token_present(options, "active_color") ? "active_color" : "";
+}
+
+inline std::string presence_card_options_normalized(const std::string &options) {
+  return cfg_option_token_present(options, "active_color") ? "active_color" : "";
+}
+
+inline std::string normalize_todo_count_display(const std::string &value) {
+  return value == "icon" ? "icon" : "count";
+}
+
+inline std::string normalize_todo_label_display(const std::string &value) {
+  (void) value;
+  return "label";
+}
+
+inline std::string normalize_todo_completed_display(const std::string &value) {
+  (void) value;
+  return "hide";
+}
+
+inline std::string todo_card_options_normalized(const std::string &options) {
+  bool show_count = normalize_todo_count_display(cfg_option_value(options, "count_display")) == "count";
+  std::string out = show_count ? "" : "count_display=icon";
+  if (show_count && (cfg_option_token_present(options, "large_numbers") ||
+      large_numbers_explicitly_disabled(options))) {
+    append_large_numbers_option(out, options);
+  }
+  return out;
+}
+
+inline bool todo_card_show_count(const ParsedCfg &p) {
+  return normalize_todo_count_display(cfg_option_value(p.options, "count_display")) == "count";
+}
+
+inline bool todo_card_shows_top_task(const ParsedCfg &p) {
+  (void) p;
+  return false;
+}
+
+inline bool todo_card_label_shows_count(const ParsedCfg &p) {
+  (void) p;
+  return false;
+}
+
+inline bool todo_card_shows_completed_items(const ParsedCfg &p) {
+  (void) p;
+  return false;
+}
+
+inline std::string normalize_climate_label_display(const std::string &value) {
+  return card_runtime_climate_label_display(value);
+}
+
+inline std::string normalize_climate_number_display(const std::string &value) {
+  return card_runtime_climate_number_display(value);
+}
+
+inline std::string climate_card_options_normalized(const std::string &options) {
+  std::string label_display = normalize_climate_label_display(cfg_option_value(options, "label_display"));
+  std::string number_display = normalize_climate_number_display(cfg_option_value(options, "number_display"));
+  std::string out;
+  if (label_display != "label") out += "label_display=" + label_display;
+  if (number_display != "target") {
+    if (!out.empty()) out += ",";
+    out += "number_display=" + number_display;
+  }
+  if (number_display != "icon" &&
+      (cfg_option_token_present(options, "large_numbers") ||
+       large_numbers_explicitly_disabled(options))) {
+    append_large_numbers_option(out, options);
+  }
+  return out;
+}
+
+inline bool action_card_large_numbers_supported(const ParsedCfg &p) {
+  if (p.type != "action") return false;
+  std::string precision = cfg_option_value(p.options, "state_precision");
+  return precision == "0" || precision == "1" || precision == "2" ||
+         !cfg_option_value(p.options, "state_unit").empty();
+}
+
+inline bool card_large_numbers_supported(const ParsedCfg &p) {
+  if (p.type.empty()) return !p.sensor.empty() && p.precision != "text";
+  if (p.type == "action") return action_card_large_numbers_supported(p);
+  if (p.type == "media") return p.sensor == "volume" || p.sensor == "position";
+  if (p.type == "climate") {
+    return normalize_climate_number_display(cfg_option_value(p.options, "number_display")) != "icon";
+  }
+  if (p.type == "todo") {
+    return normalize_todo_count_display(cfg_option_value(p.options, "count_display")) == "count";
+  }
+  if (p.type == "subpage") return !p.sensor.empty() && p.sensor != "indicator" && p.precision != "text";
+  return card_runtime_large_numbers_supported(p.type, p.precision);
+}
+
+inline std::string normalize_garage_label_display(const std::string &value) {
+  return card_runtime_garage_label_display(value);
+}
+
+inline std::string garage_card_options_normalized(const std::string &options,
+                                                  const std::string &sensor) {
+  (void)sensor;
+  return normalize_garage_label_display(cfg_option_value(options, "label_display")) == "status"
+    ? "label_display=status"
+    : "";
+}
+
+inline bool alarm_action_mode_valid(const std::string &mode) {
+  return card_runtime_alarm_action_mode_valid(mode);
+}
+
+inline const char *alarm_action_icon_name(const std::string &mode) {
+  return card_runtime_alarm_action_icon_name(mode);
+}
+
+inline bool alarm_action_legacy_icon_name(const std::string &mode, const std::string &icon) {
+  return card_runtime_alarm_action_legacy_icon_name(mode, icon);
+}
+
+inline std::string normalize_alarm_icon_display(const std::string &value) {
+  return card_runtime_alarm_icon_display(value);
+}
+
+inline std::string normalize_alarm_label_display(const std::string &value) {
+  return card_runtime_alarm_label_display(value);
+}
+
+inline std::string alarm_card_options_normalized(const std::string &options) {
+  std::string out;
+  if (cfg_option_value(options, "pin_arm") == "0") out = "pin_arm=0";
+  if (cfg_option_value(options, "pin_disarm") == "0") {
+    if (!out.empty()) out += ",";
+    out += "pin_disarm=0";
+  }
+  std::string actions = cfg_option_value(options, "actions");
+  if (!actions.empty()) {
+    std::string filtered;
+    bool saw_valid = false;
+    size_t start = 0;
+    while (start <= actions.length()) {
+      size_t end = actions.find('|', start);
+      if (end == std::string::npos) end = actions.length();
+      std::string action = actions.substr(start, end - start);
+      if (alarm_action_mode_valid(action)) {
+        if (!filtered.empty()) filtered += "|";
+        filtered += action;
+        saw_valid = true;
+      }
+      start = end + 1;
+    }
+    if (saw_valid && filtered != "away|home|disarm") {
+      if (!out.empty()) out += ",";
+      out += "actions=" + filtered;
+    }
+  }
+  std::string icon_display = normalize_alarm_icon_display(
+    cfg_option_value(options, "icon_display"));
+  if (icon_display != "status") {
+    if (!out.empty()) out += ",";
+    out += "icon_display=" + icon_display;
+  }
+  std::string label_display = normalize_alarm_label_display(
+    cfg_option_value(options, "label_display"));
+  if (label_display != "status") {
+    if (!out.empty()) out += ",";
+    out += "label_display=" + label_display;
+  }
+  return out;
+}
+
+inline std::string normalize_webhook_method(const std::string &value) {
+  std::string method;
+  method.reserve(value.size());
+  for (char ch : value) {
+    method.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(ch))));
+  }
+  if (method == "POST" || method == "PUT" || method == "PATCH" ||
+      method == "DELETE") return method;
+  return "GET";
+}
+
+inline std::string webhook_card_options_normalized(const std::string &options) {
+  std::string headers = cfg_option_value(options, "webhook_headers");
+  return headers.empty() ? std::string() : "webhook_headers=" + encode_compact_field(headers);
+}
+
+inline std::string normalize_card_on_pattern(const std::string &value) {
+  return value == "stripes" ? std::string("stripes") : std::string();
+}
+
+inline std::string switch_card_options_normalized(const std::string &options) {
+  std::string out;
+  std::string pattern = normalize_card_on_pattern(cfg_option_value(options, "on_pattern"));
+  if (!pattern.empty()) out = "on_pattern=" + pattern;
+  append_large_numbers_option(out, options);
+  if (cfg_option_token_present(options, "confirm_off")) {
+    if (!out.empty()) out += ",";
+    out += "confirm_off";
+  }
+  if (cfg_option_token_present(options, "confirm_on")) {
+    if (!out.empty()) out += ",";
+    out += "confirm_on";
+  }
+  std::string mode;
+  if (cfg_option_token_present(options, "confirm_off") &&
+      cfg_option_token_present(options, "confirm_on")) {
+    mode = "both";
+  } else if (cfg_option_token_present(options, "confirm_on")) {
+    mode = "on";
+  } else if (cfg_option_token_present(options, "confirm_off")) {
+    mode = "off";
+  }
+  if (!mode.empty()) {
+    std::string message = cfg_option_value(options, "confirm_message");
+    std::string yes = cfg_option_value(options, "confirm_yes");
+    std::string no = cfg_option_value(options, "confirm_no");
+    std::string default_message = mode == "on" ? "Turn on this device?"
+      : mode == "both" ? "Toggle this device?"
+      : "Turn off this device?";
+    if (!message.empty() && message != default_message) {
+      if (!out.empty()) out += ",";
+      out += "confirm_message=" + encode_compact_field(message);
+    }
+    if (!yes.empty() && yes != "Yes") {
+      if (!out.empty()) out += ",";
+      out += "confirm_yes=" + encode_compact_field(yes);
+    }
+    if (!no.empty() && no != "No") {
+      if (!out.empty()) out += ",";
+      out += "confirm_no=" + encode_compact_field(no);
+    }
+  }
+  return out;
+}
+
+inline void append_config_token(std::string &out, const std::string &token) {
+  if (token.empty()) return;
+  if (!out.empty()) out += ",";
+  out += token;
+}
+
+inline std::string action_card_options_normalized(const std::string &options,
+                                                  const std::string &action) {
+  std::string out;
+  std::string state_entity = cfg_option_value(options, "state_entity");
+  if (!state_entity.empty()) {
+    append_config_token(out, "state_entity=" + encode_compact_field(state_entity));
+    std::string state_precision = cfg_option_value(options, "state_precision");
+    if (state_precision == "icon" || state_precision == "text") {
+      append_config_token(out, "state_precision=" + state_precision);
+    } else {
+      std::string state_unit = cfg_option_value(options, "state_unit");
+      if (!state_unit.empty()) {
+        append_config_token(out, "state_unit=" + encode_compact_field(state_unit));
+      }
+      if (state_precision == "1" || state_precision == "2") {
+        append_config_token(out, "state_precision=" + state_precision);
+      }
+      append_large_numbers_option(out, options);
+    }
+  }
+
+  if (action == "script.turn_on" && cfg_option_token_present(options, "confirm_on")) {
+    append_config_token(out, "confirm_on");
+    std::string message = cfg_option_value(options, "confirm_message");
+    std::string yes = cfg_option_value(options, "confirm_yes");
+    std::string no = cfg_option_value(options, "confirm_no");
+    if (!message.empty() && message != "Run this script?") {
+      append_config_token(out, "confirm_message=" + encode_compact_field(message));
+    }
+    if (!yes.empty() && yes != "Yes") {
+      append_config_token(out, "confirm_yes=" + encode_compact_field(yes));
+    }
+    if (!no.empty() && no != "No") {
+      append_config_token(out, "confirm_no=" + encode_compact_field(no));
+    }
+  }
+  return out;
 }
 
 inline ParsedCfg normalize_parsed_cfg(ParsedCfg p) {
   // Slider cards used to store "h" here for horizontal layout. Sliders are
   // now always vertical, so treat any saved slider sensor value as legacy.
   if (brightness_slider_type(p.type) && !p.sensor.empty()) p.sensor.clear();
+  if (fan_card_type(p.type)) {
+    p.sensor.clear();
+    p.unit.clear();
+    p.precision.clear();
+    p.options.clear();
+    if (p.icon.empty() || p.icon == "Auto") p.icon = fan_card_default_icon_name(p.type);
+    if (p.type == "fan_switch") {
+      if (p.icon_on.empty() || p.icon_on == "Auto") p.icon_on = "Fan";
+    } else {
+      p.icon_on.clear();
+    }
+  }
   if (p.type == "weather_forecast") {
     p.type = "weather";
     p.precision = "tomorrow";
     if (p.label == "Weather") p.label.clear();
   }
+  if (p.type == "weather" && !card_runtime_weather_forecast_precision(p.precision)) {
+    p.precision.clear();
+  }
   if (p.type == "media") {
     if (p.sensor == "controls") {
       if (p.icon.empty() || p.icon == "Speaker") p.icon = "Auto";
-      p.sensor = "play_pause";
+      p.sensor = card_runtime_media_mode(p.sensor);
     } else if (p.sensor.empty()) {
-      p.sensor = "play_pause";
-    } else if (p.sensor != "play_pause" && p.sensor != "previous" &&
-               p.sensor != "next" && p.sensor != "volume" &&
-               p.sensor != "position" && p.sensor != "now_playing") {
-      p.sensor = "play_pause";
+      p.sensor = card_runtime_media_mode(p.sensor);
+    } else {
+      p.sensor = card_runtime_media_mode(p.sensor);
     }
     if (p.sensor == "previous" && p.label == "Skip Previous") p.label = "Previous";
     if (p.sensor == "next" && p.label == "Skip Next") p.label = "Next";
@@ -135,26 +862,162 @@ inline ParsedCfg normalize_parsed_cfg(ParsedCfg p) {
     }
     if (p.sensor == "position" && (p.label.empty() || p.label == "Track")) p.label = "Position";
     if (p.sensor == "now_playing") {
-      p.precision = (p.precision == "progress" || p.precision == "play_pause") ? p.precision : "";
-    } else if ((p.sensor == "play_pause" || p.sensor == "position") && p.precision == "state") {
+      p.precision = card_runtime_media_now_playing_control(p.precision) ? p.precision : "";
+    } else if (card_runtime_media_state_display_mode(p.sensor) && p.precision == "state") {
       p.precision = "state";
     } else {
       p.precision.clear();
     }
+    p.options = media_card_options_normalized(p.options, p.sensor);
   }
   if (p.type == "climate") {
     p.sensor.clear();
     p.unit.clear();
-    p.icon_on.clear();
+    if (p.icon.empty()) p.icon = "Thermostat";
+    p.options = climate_card_options_normalized(p.options);
   }
   if (p.type == "garage") {
-    if (p.sensor != "open" && p.sensor != "close") p.sensor.clear();
+    if (!card_runtime_garage_mode_valid(p.sensor)) p.sensor.clear();
     p.unit.clear();
     p.precision.clear();
     if (!p.sensor.empty()) p.icon_on.clear();
+    p.options = garage_card_options_normalized(p.options, p.sensor);
   }
-  if (!p.type.empty() && !card_large_numbers_supported(p)) {
+  if (p.type == "alarm") {
+    p.sensor.clear();
+    p.unit.clear();
+    p.precision.clear();
+    p.icon_on.clear();
+    if (p.icon.empty() || p.icon == "Auto") p.icon = "Security";
+    p.options = alarm_card_options_normalized(p.options);
+  }
+  if (p.type == "alarm_action") {
+    if (!alarm_action_mode_valid(p.sensor)) p.sensor = "away";
+    p.unit.clear();
+    p.precision.clear();
+    p.icon_on.clear();
+    if (p.icon.empty() || p.icon == "Auto" || alarm_action_legacy_icon_name(p.sensor, p.icon)) {
+      p.icon = alarm_action_icon_name(p.sensor);
+    }
+    p.options = alarm_card_options_normalized(p.options);
+  }
+  if (p.type == "webhook") {
+    p.sensor = normalize_webhook_method(p.sensor);
+    if (p.sensor == "GET" || p.sensor == "DELETE") p.unit.clear();
+    p.precision.clear();
+    p.icon_on.clear();
+    if (p.icon.empty()) p.icon = "Auto";
+    p.options = webhook_card_options_normalized(p.options);
+  }
+  if (p.type == "image") {
+    p.icon_on = "Auto";
+    p.sensor.clear();
+    p.unit.clear();
+    p.precision.clear();
+    p.options = image_card_options_normalized(p.options);
+    p.icon = image_card_icon_enabled(p)
+      ? (p.icon.empty() || p.icon == "Auto" ? "Camera" : p.icon)
+      : "Auto";
+    if (!image_card_label_enabled(p)) p.label.clear();
+  }
+  if (p.type == "screen_lock") {
+    p.entity.clear();
+    p.label.clear();
+    p.sensor.clear();
+    p.unit.clear();
+    p.precision.clear();
     p.options.clear();
+    p.icon = "Lock";
+    p.icon_on = "Lock Open";
+  }
+  if (p.type == "todo") {
+    p.sensor.clear();
+    p.unit.clear();
+    p.precision.clear();
+    p.icon_on = "Auto";
+    if (p.icon.empty() || p.icon == "Auto") p.icon = "Check";
+    p.options = todo_card_options_normalized(p.options);
+  }
+  if (p.type == "light_switch") {
+    p.sensor.clear();
+    p.unit.clear();
+    p.precision.clear();
+    p.options.clear();
+  }
+  if (p.type == "subpage") {
+    p.options = subpage_card_options_normalized(p.options, p.sensor, p.precision);
+  }
+  if (p.type == "option_select") {
+    p.type = "action";
+    p.sensor = card_runtime_option_select_canonical_action();
+    p.unit.clear();
+    p.precision.clear();
+    p.options.clear();
+    p.icon_on.clear();
+    if (p.icon.empty() || p.icon == "Auto" || p.icon == "Chevron Down") p.icon = "Flash";
+  }
+  if (action_card_option_select(p)) {
+    p.sensor = card_runtime_option_select_canonical_action();
+    p.unit.clear();
+    p.precision.clear();
+    p.options.clear();
+    p.icon_on.clear();
+    if (p.icon.empty() || p.icon == "Auto" || p.icon == "Chevron Down") p.icon = "Flash";
+  }
+  if (p.type == "action" && p.sensor == "vacuum.start") {
+    p.type = "vacuum";
+    p.sensor = "start_stop";
+    p.unit.clear();
+    p.precision.clear();
+    p.options.clear();
+    p.icon_on = "Auto";
+    if (p.icon.empty() || p.icon == "Auto") p.icon = "Robot Vacuum";
+  }
+  if (p.type == "action" && p.sensor == "vacuum.return_to_base") {
+    p.type = "vacuum";
+    p.sensor = "dock";
+    p.unit.clear();
+    p.precision.clear();
+    p.options.clear();
+    p.icon_on = "Auto";
+    if (p.icon.empty() || p.icon == "Auto") p.icon = "Robot Vacuum Variant";
+  }
+  if (p.type == "action") {
+    p.precision.clear();
+    p.options = action_card_options_normalized(p.options, p.sensor);
+  }
+  if (p.type == "vacuum") {
+    p.sensor = card_runtime_vacuum_mode(p.sensor);
+    if (p.sensor != "clean_area") p.unit.clear();
+    p.precision.clear();
+    p.options.clear();
+    p.icon_on = "Auto";
+    if (p.icon.empty() || p.icon == "Auto") p.icon = card_runtime_vacuum_default_icon_name(p.sensor);
+  }
+  if (p.type.empty()) {
+    p.options = switch_card_options_normalized(p.options);
+  }
+  if (p.type == "door_window") {
+    p.entity.clear();
+    p.unit.clear();
+    p.precision = normalize_door_window_subtype(p.precision);
+    if (p.icon.empty() || p.icon == "Auto") p.icon = door_window_closed_icon_name(p.precision);
+    if (p.icon_on.empty() || p.icon_on == "Auto") p.icon_on = door_window_open_icon_name(p.precision);
+    p.options = door_window_card_options_normalized(p.options);
+  }
+  if (p.type == "presence") {
+    p.entity.clear();
+    p.unit.clear();
+    p.precision.clear();
+    if (p.icon.empty() || p.icon == "Auto") p.icon = "Motion Sensor Off";
+    if (p.icon_on.empty() || p.icon_on == "Auto") p.icon_on = "Motion Sensor";
+    p.options = presence_card_options_normalized(p.options);
+  }
+  if (!p.type.empty() && p.type != "action" && p.type != "alarm" && p.type != "alarm_action" && p.type != "climate" && p.type != "garage" && p.type != "webhook" && p.type != "screen_lock" && p.type != "todo" && p.type != "sensor" && p.type != "door_window" && p.type != "presence" && p.type != "media" && p.type != "subpage" && p.type != "image" && p.type != "vacuum" && !fan_card_type(p.type) && !card_large_numbers_supported(p)) {
+    p.options.clear();
+  }
+  if (p.type == "sensor") {
+    p.options = sensor_card_options_normalized(p.options, p.precision);
   }
   return p;
 }
@@ -187,63 +1050,151 @@ inline ParsedCfg parse_cfg(const std::string &cfg) {
 }
 
 inline bool cfg_option_enabled(const std::string &options, const char *name) {
-  if (!name || !*name || options.empty()) return false;
-  size_t start = 0;
-  while (start <= options.length()) {
-    size_t end = options.find(',', start);
-    if (end == std::string::npos) end = options.length();
-    if (options.compare(start, end - start, name) == 0) return true;
-    start = end + 1;
-  }
-  return false;
+  return cfg_option_token_present(options, name);
 }
 
-inline std::string cfg_option_value(const std::string &options, const char *name) {
-  if (!name || !*name || options.empty()) return "";
-  std::string prefix = std::string(name) + "=";
-  size_t start = 0;
-  while (start <= options.length()) {
-    size_t end = options.find(',', start);
-    if (end == std::string::npos) end = options.length();
-    if (options.compare(start, prefix.length(), prefix) == 0) {
-      return decode_compact_field(options.substr(start + prefix.length(), end - start - prefix.length()));
-    }
-    start = end + 1;
-  }
-  return "";
+inline int media_volume_max_percent(const ParsedCfg &p) {
+  return p.type == "media" && p.sensor == "volume"
+    ? normalize_media_volume_max_percent(cfg_option_value(p.options, "volume_max"))
+    : 100;
+}
+
+inline std::string action_card_state_entity(const ParsedCfg &p) {
+  return p.type == "action" ? cfg_option_value(p.options, "state_entity") : "";
+}
+
+inline std::string action_card_state_unit(const ParsedCfg &p) {
+  return p.type == "action" ? cfg_option_value(p.options, "state_unit") : "";
+}
+
+inline std::string action_card_state_precision(const ParsedCfg &p) {
+  return p.type == "action" ? cfg_option_value(p.options, "state_precision") : "";
+}
+
+inline bool action_card_state_display_enabled(const ParsedCfg &p) {
+  if (action_card_state_entity(p).empty()) return false;
+  std::string precision = action_card_state_precision(p);
+  return precision == "icon" || precision == "text" || precision == "0" ||
+         precision == "1" || precision == "2" ||
+         !action_card_state_unit(p).empty();
+}
+
+inline bool action_card_state_icon_mode(const ParsedCfg &p) {
+  return action_card_state_display_enabled(p) &&
+         action_card_state_precision(p) == "icon";
+}
+
+inline bool action_card_state_text_mode(const ParsedCfg &p) {
+  return action_card_state_display_enabled(p) &&
+         action_card_state_precision(p) == "text";
+}
+
+inline std::string webhook_card_headers(const ParsedCfg &p) {
+  return p.type == "webhook" ? cfg_option_value(p.options, "webhook_headers") : "";
+}
+
+inline bool action_card_state_numeric_mode(const ParsedCfg &p) {
+  return action_card_state_display_enabled(p) &&
+         action_card_state_precision(p) != "icon" &&
+         action_card_state_precision(p) != "text";
 }
 
 inline bool card_large_numbers_enabled(const ParsedCfg &p) {
   return card_large_numbers_supported(p) && cfg_option_enabled(p.options, "large_numbers");
 }
 
+inline bool card_large_numbers_disabled(const ParsedCfg &p) {
+  return card_large_numbers_supported(p) && large_numbers_explicitly_disabled(p.options);
+}
+
 inline bool sensor_large_numbers_enabled(const ParsedCfg &p) {
   return card_large_numbers_enabled(p);
 }
 
+inline bool sensor_active_color_enabled(const ParsedCfg &p) {
+  return p.type == "sensor" && cfg_option_enabled(p.options, "active_color");
+}
+
+inline bool sensor_state_labels_enabled(const ParsedCfg &p) {
+  return p.type == "sensor" && p.precision == "text" &&
+         cfg_option_enabled(p.options, SENSOR_STATE_LABELS_OPTION);
+}
+
+inline bool door_window_active_color_enabled(const ParsedCfg &p) {
+  return p.type == "door_window" && cfg_option_enabled(p.options, "active_color");
+}
+
+inline bool presence_active_color_enabled(const ParsedCfg &p) {
+  return p.type == "presence" && cfg_option_enabled(p.options, "active_color");
+}
+
 inline bool switch_confirmation_enabled(const ParsedCfg &p) {
-  return p.type.empty() && cfg_option_enabled(p.options, "confirm_off");
+  return p.type.empty() &&
+         (cfg_option_enabled(p.options, "confirm_off") ||
+          cfg_option_enabled(p.options, "confirm_on"));
+}
+
+inline bool action_script_confirmation_enabled(const ParsedCfg &p) {
+  return p.type == "action" && p.sensor == "script.turn_on" &&
+         cfg_option_enabled(p.options, "confirm_on");
+}
+
+inline bool switch_confirmation_required(const ParsedCfg &p, bool currently_on) {
+  if (p.type.empty()) {
+    return currently_on
+      ? cfg_option_enabled(p.options, "confirm_off")
+      : cfg_option_enabled(p.options, "confirm_on");
+  }
+  return false;
+}
+
+inline std::string switch_confirmation_default_message(const ParsedCfg &p) {
+  if (action_script_confirmation_enabled(p)) {
+    return espcontrol_i18n(std::string("Run this script?"));
+  }
+  bool confirm_off = cfg_option_enabled(p.options, "confirm_off");
+  bool confirm_on = cfg_option_enabled(p.options, "confirm_on");
+  if (confirm_off && confirm_on) return espcontrol_i18n(std::string("Toggle this device?"));
+  if (confirm_on) return espcontrol_i18n(std::string("Turn on this device?"));
+  return espcontrol_i18n(std::string("Turn off this device?"));
 }
 
 inline std::string switch_confirmation_message(const ParsedCfg &p) {
   std::string value = cfg_option_value(p.options, "confirm_message");
-  return value.empty() ? std::string("Turn off this device?") : value;
+  return value.empty() ? switch_confirmation_default_message(p) : value;
 }
 
 inline std::string switch_confirmation_yes_text(const ParsedCfg &p) {
   std::string value = cfg_option_value(p.options, "confirm_yes");
-  return value.empty() ? std::string("Turn Off") : value;
+  return value.empty() ? espcontrol_i18n(std::string("Yes")) : value;
 }
 
 inline std::string switch_confirmation_no_text(const ParsedCfg &p) {
   std::string value = cfg_option_value(p.options, "confirm_no");
-  return value.empty() ? std::string("Cancel") : value;
+  return value.empty() ? std::string("No") : value;
 }
 
 inline int parse_precision(const std::string &s) {
   if (s.empty()) return 0;
   int v = atoi(s.c_str());
   return (v < 0) ? 0 : (v > 3) ? 3 : v;
+}
+
+inline int clamp_percent_value(int pct) {
+  if (pct < 0) return 0;
+  if (pct > 100) return 100;
+  return pct;
+}
+
+inline bool light_brightness_to_percent(float brightness, int &pct) {
+  if (!std::isfinite(brightness)) return false;
+  if (brightness <= 0.0f) {
+    pct = 0;
+    return true;
+  }
+  pct = clamp_percent_value((int)((brightness * 100.0f + 127.0f) / 255.0f));
+  if (pct < 1) pct = 1;
+  return true;
 }
 
 inline std::string trim_display_unit(const std::string &unit) {
@@ -279,6 +1230,15 @@ inline std::string string_ref_limited(esphome::StringRef value, size_t max_len) 
   return std::string(value.c_str(), len);
 }
 
+inline std::string normalized_state_text(esphome::StringRef value,
+                                         size_t max_len = HA_SHORT_STATE_MAX_LEN) {
+  std::string text = trim_display_unit(string_ref_limited(value, max_len));
+  for (char &ch : text) {
+    ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  }
+  return text;
+}
+
 inline std::string text_sensor_display_text(esphome::StringRef value,
                                             size_t max_len = HA_TEXT_SENSOR_STATE_MAX_LEN) {
   std::string raw = string_ref_limited(value, max_len);
@@ -297,7 +1257,13 @@ inline std::string text_sensor_display_text(esphome::StringRef value,
       last_space = false;
       continue;
     }
-    if (ch == '_' || ch == '-' || std::isspace(c)) {
+    if (ch == '-' && !out.empty() && out.back() != '\n' && out.back() != ' ') {
+      out.push_back(ch);
+      cap_next = true;
+      last_space = false;
+      continue;
+    }
+    if (ch == '_' || std::isspace(c)) {
       if (!out.empty() && !last_space && out.back() != '\n') {
         out.push_back(' ');
         last_space = true;
@@ -317,6 +1283,40 @@ inline std::string text_sensor_display_text(esphome::StringRef value,
   return out;
 }
 
+inline std::string sensor_state_translation_key(const std::string &value) {
+  std::string text = trim_display_unit(value);
+  for (char &ch : text) {
+    ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  }
+  return text;
+}
+
+inline std::string sensor_state_display_text(const ParsedCfg &p,
+                                             esphome::StringRef value,
+                                             size_t max_len = HA_TEXT_SENSOR_STATE_MAX_LEN) {
+  if (sensor_state_labels_enabled(p)) {
+    std::string state = normalized_state_text(value, max_len);
+    std::string input = cfg_option_value(p.options, SENSOR_STATE_INPUT_OPTION);
+    std::string output = cfg_option_value(p.options, SENSOR_STATE_OUTPUT_OPTION);
+    if (input.empty() && !cfg_option_value(p.options, SENSOR_STATE_HIGH_LABEL_OPTION).empty()) {
+      input = "high";
+      output = cfg_option_value(p.options, SENSOR_STATE_HIGH_LABEL_OPTION);
+    } else if (input.empty() && !cfg_option_value(p.options, SENSOR_STATE_LOW_LABEL_OPTION).empty()) {
+      input = "low";
+      output = cfg_option_value(p.options, SENSOR_STATE_LOW_LABEL_OPTION);
+    }
+    if (!input.empty() && state == sensor_state_translation_key(input)) {
+      return output;
+    }
+    input = cfg_option_value(p.options, SENSOR_STATE_INPUT_2_OPTION);
+    output = cfg_option_value(p.options, SENSOR_STATE_OUTPUT_2_OPTION);
+    if (!input.empty() && state == sensor_state_translation_key(input)) {
+      return output;
+    }
+  }
+  return text_sensor_display_text(value, max_len);
+}
+
 inline void lv_label_set_text_limited(lv_obj_t *label, esphome::StringRef value, size_t max_len) {
   std::string text = string_ref_limited(value, max_len);
   lv_label_set_text(label, text.c_str());
@@ -329,13 +1329,79 @@ inline bool parse_float_ref(esphome::StringRef value, float &out) {
 }
 
 inline bool is_entity_on_ref(esphome::StringRef state) {
-  return state == "on" || state == "home" || state == "playing" ||
-         state == "open" || state == "opening" || state == "closing" ||
-         state == "unlocked" || state == "unlocking" || state == "jammed";
+  std::string value = normalized_state_text(state);
+  return value == "on" || value == "true" || value == "1" ||
+         value == "home" || value == "playing" ||
+         value == "open" || value == "opened" ||
+         value == "opening" || value == "closing" ||
+         value == "unlocked" || value == "unlocking" || value == "jammed";
+}
+
+inline bool presence_detected_ref(esphome::StringRef state) {
+  std::string value = normalized_state_text(state);
+  return value == "detected" || is_entity_on_ref(state);
 }
 
 inline bool ha_state_unavailable_ref(esphome::StringRef state) {
-  return state.size() == 0 || state == "unavailable" || state == "unknown";
+  std::string value = normalized_state_text(state);
+  return value.empty() || value == "unavailable" || value == "unknown";
+}
+
+inline bool ha_entity_accepts_unknown_state(const std::string &entity_id) {
+  return (entity_id.size() > 7 && entity_id.compare(0, 7, "button.") == 0) ||
+         (entity_id.size() > 13 && entity_id.compare(0, 13, "input_button.") == 0);
+}
+
+inline bool ha_entity_state_unavailable_ref(const std::string &entity_id,
+                                            esphome::StringRef state) {
+  std::string value = normalized_state_text(state);
+  if (value.empty() || value == "unavailable") return true;
+  if (value == "unknown") return !ha_entity_accepts_unknown_state(entity_id);
+  return false;
+}
+
+struct HaControlAvailabilityRef {
+  lv_obj_t *visual_obj;
+  lv_obj_t *input_obj;
+  bool disable_interaction;
+};
+
+inline std::vector<HaControlAvailabilityRef> &ha_control_availability_refs() {
+  static std::vector<HaControlAvailabilityRef> refs;
+  return refs;
+}
+
+inline void reset_ha_control_availability_refs() {
+  ha_control_availability_refs().clear();
+}
+
+#ifndef ESPCONTROL_HA_DEFERRED_HELPERS_DEFINED
+inline void ha_reset_deferred_state_requests() {}
+#endif
+
+inline uint32_t &ha_subscription_generation() {
+  static uint32_t generation = 1;
+  return generation;
+}
+
+inline void bump_ha_subscription_generation() {
+  uint32_t &generation = ha_subscription_generation();
+  generation++;
+  if (generation == 0) generation = 1;
+  ha_reset_deferred_state_requests();
+}
+
+inline void register_ha_control_availability(lv_obj_t *visual_obj, lv_obj_t *input_obj,
+                                             bool disable_interaction = true) {
+  if (!visual_obj && !input_obj) return;
+  std::vector<HaControlAvailabilityRef> &refs = ha_control_availability_refs();
+  for (const auto &ref : refs) {
+    if (ref.visual_obj == visual_obj && ref.input_obj == input_obj &&
+        ref.disable_interaction == disable_interaction) {
+      return;
+    }
+  }
+  refs.push_back({visual_obj, input_obj, disable_interaction});
 }
 
 inline void apply_control_availability(lv_obj_t *visual_obj, lv_obj_t *input_obj,
@@ -354,6 +1420,14 @@ inline void apply_control_availability(lv_obj_t *visual_obj, lv_obj_t *input_obj
   }
   if (available) lv_obj_add_flag(input_obj, LV_OBJ_FLAG_CLICKABLE);
   else lv_obj_clear_flag(input_obj, LV_OBJ_FLAG_CLICKABLE);
+}
+
+inline void apply_registered_ha_control_availability(bool available) {
+  const auto &refs = ha_control_availability_refs();
+  for (const auto &ref : refs) {
+    apply_control_availability(ref.visual_obj, ref.input_obj, available, ref.disable_interaction);
+  }
+  if (!refs.empty()) notify_dashboard_content_changed();
 }
 
 inline std::string sentence_cap_text(const std::string &state) {
@@ -383,57 +1457,139 @@ inline std::string sentence_cap_text(const std::string &state) {
   return out;
 }
 
+inline std::string normalize_weather_state(std::string state) {
+  state = trim_display_unit(state);
+  std::string normalized;
+  normalized.reserve(state.size());
+  bool last_dash = false;
+  for (char ch : state) {
+    unsigned char uch = static_cast<unsigned char>(ch);
+    if (std::isalnum(uch)) {
+      normalized.push_back(static_cast<char>(std::tolower(uch)));
+      last_dash = false;
+    } else if (!last_dash) {
+      normalized.push_back('-');
+      last_dash = true;
+    }
+  }
+  while (!normalized.empty() && normalized.back() == '-') normalized.pop_back();
+  if (normalized.compare(0, 4, "mdi-") == 0) normalized = normalized.substr(4);
+  if (normalized.compare(0, 8, "weather-") == 0) normalized = normalized.substr(8);
+  if (normalized == "clear" || normalized == "mostly-clear" || normalized == "mostly-sunny") return "sunny";
+  if (normalized == "clear-day") return "sunny";
+  if (normalized == "overcast" || normalized == "broken-clouds" ||
+      normalized == "mostly-cloudy" || normalized == "scattered-clouds") return "cloudy";
+  if (normalized == "foggy") return "fog";
+  if (normalized == "night") return "clear-night";
+  if (normalized == "mostly-clear-night" || normalized == "night-clear") return "clear-night";
+  if (normalized == "partly-cloudy") return "partlycloudy";
+  if (normalized == "partly-sunny" || normalized == "few-clouds") return "partlycloudy";
+  if (normalized == "partly-cloudy-day") return "partlycloudy";
+  if (normalized == "partly-cloudy-night" || normalized == "mostly-cloudy-night" ||
+      normalized == "cloudy-night" || normalized == "few-clouds-night" ||
+      normalized == "night-cloudy") return "night-partly-cloudy";
+  if (normalized == "drizzle" || normalized == "light-rain" ||
+      normalized == "rain" || normalized == "showers") return "rainy";
+  if (normalized == "heavy-rain" || normalized == "heavy-showers") return "pouring";
+  if (normalized == "possibly-rainy-day" || normalized == "possibly-rainy-night") return "rainy";
+  if (normalized == "possibly-sleet-day" || normalized == "possibly-sleet-night") return "snowy-rainy";
+  if (normalized == "possibly-snow-day" || normalized == "possibly-snow-night") return "snowy";
+  if (normalized == "possibly-thunderstorm-day" || normalized == "possibly-thunderstorm-night") return "lightning-rainy";
+  if (normalized == "freezing-rain") return "snowy-rainy";
+  if (normalized == "blizzard" || normalized == "heavy-snow") return "snowy-heavy";
+  if (normalized == "sleet") return "snowy-rainy";
+  if (normalized == "snow") return "snowy";
+  if (normalized == "storm" || normalized == "stormy" ||
+      normalized == "thunderstorm" || normalized == "thunderstorms") return "lightning";
+  if (normalized == "sunny-off" || normalized == "unknown") return "unavailable";
+  return normalized;
+}
+
 inline const char* weather_icon_for_state(const std::string &state) {
-  if (state == "sunny") return find_icon("Weather Sunny");
-  if (state == "clear-night") return find_icon("Weather Night");
-  if (state == "partlycloudy") return find_icon("Weather Partly Cloudy");
-  if (state == "cloudy") return find_icon("Weather Cloudy");
-  if (state == "fog") return find_icon("Weather Fog");
-  if (state == "hail") return find_icon("Weather Hail");
-  if (state == "lightning") return find_icon("Weather Lightning");
-  if (state == "lightning-rainy") return find_icon("Weather Lightning Rainy");
-  if (state == "pouring") return find_icon("Weather Pouring");
-  if (state == "rainy") return find_icon("Weather Rainy");
-  if (state == "snowy") return find_icon("Weather Snowy");
-  if (state == "snowy-rainy") return find_icon("Weather Snowy Rainy");
-  if (state == "windy") return find_icon("Weather Windy");
-  if (state == "windy-variant") return find_icon("Weather Windy Variant");
-  if (state == "unavailable" || state.empty()) return find_icon("Weather Sunny Off");
+  std::string normalized = normalize_weather_state(state);
+  if (normalized == "sunny") return find_icon("Weather Sunny");
+  if (normalized == "clear-night") return find_icon("Weather Night");
+  if (normalized == "partlycloudy") return find_icon("Weather Partly Cloudy");
+  if (normalized == "cloudy") return find_icon("Weather Cloudy");
+  if (normalized == "cloudy-alert") return find_icon("Weather Cloudy Alert");
+  if (normalized == "dust") return find_icon("Weather Dust");
+  if (normalized == "fog") return find_icon("Weather Fog");
+  if (normalized == "hail") return find_icon("Weather Hail");
+  if (normalized == "hazy") return find_icon("Weather Hazy");
+  if (normalized == "hurricane") return find_icon("Weather Hurricane");
+  if (normalized == "lightning") return find_icon("Weather Lightning");
+  if (normalized == "lightning-rainy") return find_icon("Weather Lightning Rainy");
+  if (normalized == "night-partly-cloudy") return find_icon("Weather Night Cloudy");
+  if (normalized == "partly-lightning") return find_icon("Weather Partly Lightning");
+  if (normalized == "partly-rainy") return find_icon("Weather Partly Rainy");
+  if (normalized == "partly-snowy") return find_icon("Weather Partly Snowy");
+  if (normalized == "partly-snowy-rainy") return find_icon("Weather Partly Snowy Rainy");
+  if (normalized == "pouring") return find_icon("Weather Pouring");
+  if (normalized == "rainy") return find_icon("Weather Rainy");
+  if (normalized == "snowy") return find_icon("Weather Snowy");
+  if (normalized == "snowy-heavy") return find_icon("Weather Snowy Heavy");
+  if (normalized == "snowy-rainy") return find_icon("Weather Snowy Rainy");
+  if (normalized == "sunny-alert") return find_icon("Weather Sunny Alert");
+  if (normalized == "sunset") return find_icon("Weather Sunset");
+  if (normalized == "sunset-down") return find_icon("Weather Sunset Down");
+  if (normalized == "sunset-up") return find_icon("Weather Sunset Up");
+  if (normalized == "tornado") return find_icon("Weather Tornado");
+  if (normalized == "windy") return find_icon("Weather Windy");
+  if (normalized == "windy-variant") return find_icon("Weather Windy Variant");
+  if (normalized == "unavailable" || normalized.empty()) return find_icon("Weather Sunny Off");
   return find_icon("Weather Cloudy Alert");
 }
 
 inline std::string weather_label_for_state(const std::string &state) {
-  if (state == "sunny") return "Sunny";
-  if (state == "clear-night") return "Clear Night";
-  if (state == "partlycloudy") return "Partly Cloudy";
-  if (state == "cloudy") return "Cloudy";
-  if (state == "fog") return "Fog";
-  if (state == "hail") return "Hail";
-  if (state == "lightning") return "Lightning";
-  if (state == "lightning-rainy") return "Lightning And Rain";
-  if (state == "pouring") return "Pouring";
-  if (state == "rainy") return "Rainy";
-  if (state == "snowy") return "Snowy";
-  if (state == "snowy-rainy") return "Snowy And Rain";
-  if (state == "windy") return "Windy";
-  if (state == "windy-variant") return "Windy And Cloudy";
-  if (state == "exceptional") return "Exceptional";
-  if (state == "unknown") return "Unknown";
-  if (state == "unavailable" || state.empty()) return "Unavailable";
+  std::string normalized = normalize_weather_state(state);
+  if (normalized == "sunny") return espcontrol_i18n(std::string("Sunny"));
+  if (normalized == "clear-night") return espcontrol_i18n(std::string("Clear Night"));
+  if (normalized == "partlycloudy") return espcontrol_i18n(std::string("Partly Cloudy"));
+  if (normalized == "cloudy") return espcontrol_i18n(std::string("Cloudy"));
+  if (normalized == "cloudy-alert") return espcontrol_i18n(std::string("Cloudy Alert"));
+  if (normalized == "dust") return espcontrol_i18n(std::string("Dust"));
+  if (normalized == "fog") return espcontrol_i18n(std::string("Fog"));
+  if (normalized == "hail") return espcontrol_i18n(std::string("Hail"));
+  if (normalized == "hazy") return espcontrol_i18n(std::string("Hazy"));
+  if (normalized == "hurricane") return espcontrol_i18n(std::string("Hurricane"));
+  if (normalized == "lightning") return espcontrol_i18n(std::string("Lightning"));
+  if (normalized == "lightning-rainy") return espcontrol_i18n(std::string("Lightning And Rain"));
+  if (normalized == "night-partly-cloudy") return espcontrol_i18n(std::string("Partly Cloudy Night"));
+  if (normalized == "partly-lightning") return espcontrol_i18n(std::string("Partly Lightning"));
+  if (normalized == "partly-rainy") return espcontrol_i18n(std::string("Partly Rainy"));
+  if (normalized == "partly-snowy") return espcontrol_i18n(std::string("Partly Snowy"));
+  if (normalized == "partly-snowy-rainy") return espcontrol_i18n(std::string("Partly Snow And Rain"));
+  if (normalized == "pouring") return espcontrol_i18n(std::string("Pouring"));
+  if (normalized == "rainy") return espcontrol_i18n(std::string("Rainy"));
+  if (normalized == "snowy") return espcontrol_i18n(std::string("Snowy"));
+  if (normalized == "snowy-heavy") return espcontrol_i18n(std::string("Heavy Snow"));
+  if (normalized == "snowy-rainy") return espcontrol_i18n(std::string("Snowy And Rain"));
+  if (normalized == "sunny-alert") return espcontrol_i18n(std::string("Sunny Alert"));
+  if (normalized == "sunset") return espcontrol_i18n(std::string("Sunset"));
+  if (normalized == "sunset-down") return espcontrol_i18n(std::string("Sunset Down"));
+  if (normalized == "sunset-up") return espcontrol_i18n(std::string("Sunset Up"));
+  if (normalized == "tornado") return espcontrol_i18n(std::string("Tornado"));
+  if (normalized == "windy") return espcontrol_i18n(std::string("Windy"));
+  if (normalized == "windy-variant") return espcontrol_i18n(std::string("Windy And Cloudy"));
+  if (normalized == "exceptional") return espcontrol_i18n(std::string("Exceptional"));
+  if (normalized == "unknown") return espcontrol_i18n(std::string("Unknown"));
+  if (normalized == "unavailable" || normalized.empty()) return espcontrol_i18n(std::string("Unavailable"));
 
   return sentence_cap_text(state);
 }
 
 struct WeatherForecastCardRef {
+  lv_obj_t *btn;
   lv_obj_t *value_lbl;
   lv_obj_t *unit_lbl;
   lv_obj_t *label_lbl;
   std::string entity_id;
   std::string day;
   std::string label;
+  std::string status_label;
   bool valid = false;
-  int high = 0;
-  int low = 0;
+  float high = 0.0f;
+  float low = 0.0f;
   std::string source_unit;
 };
 
@@ -448,38 +1604,72 @@ inline int &weather_forecast_card_count() {
 }
 
 inline void reset_weather_forecast_cards() {
+  WeatherForecastCardRef *refs = weather_forecast_card_refs();
+  for (int i = 0; i < MAX_GRID_SLOTS + MAX_SUBPAGE_ITEMS; i++) {
+    refs[i] = WeatherForecastCardRef();
+  }
   weather_forecast_card_count() = 0;
 }
 
-constexpr int WEATHER_FORECAST_TEMP_MISSING = 32767;
+constexpr float WEATHER_FORECAST_TEMP_MISSING = 32767.0f;
+constexpr int WEATHER_FORECAST_PENDING_MAX = 8;
+constexpr uint32_t WEATHER_FORECAST_REQUEST_TIMEOUT_MS = 60000;
+constexpr uint32_t WEATHER_FORECAST_RETRY_DELAY_MS = 300000;
+
+struct WeatherForecastPendingRequest {
+  uint32_t call_id = 0;
+  uint32_t started_ms = 0;
+  std::string entity_id;
+  std::string day;
+};
+
+struct WeatherForecastQueuedRequest {
+  std::string entity_id;
+  std::string day;
+};
+
+struct WeatherForecastRetryRequest {
+  std::string entity_id;
+  std::string day;
+  uint32_t due_ms = 0;
+};
 
 inline std::string weather_forecast_unit_symbol(const std::string &unit) {
   (void)unit;
   return display_temperature_unit_symbol();
 }
 
+inline int weather_forecast_display_temp(float value, const std::string &unit) {
+  if (value == WEATHER_FORECAST_TEMP_MISSING) return value;
+  float converted = convert_temperature_value_for_display_float(value, unit);
+  return static_cast<int>(converted >= 0.0f ? converted + 0.5f : converted - 0.5f);
+}
+
 inline void apply_weather_forecast_card_text(const WeatherForecastCardRef &ref,
-                                             bool valid, int high, int low,
+                                             bool valid, float high, float low,
                                              const std::string &unit) {
   if (ref.label_lbl) {
-    std::string label = ref.label.empty()
-      ? (ref.day == "today" ? "Today" : "Tomorrow")
-      : ref.label;
+    std::string label = !ref.status_label.empty()
+      ? ref.status_label
+      : (ref.label.empty()
+          ? (ref.day == "today" ? espcontrol_i18n(std::string("Today")) : espcontrol_i18n(std::string("Tomorrow")))
+          : ref.label);
     lv_label_set_text(ref.label_lbl, label.c_str());
   }
   if (!ref.value_lbl || !ref.unit_lbl) return;
   if (!valid) {
     lv_label_set_text(ref.value_lbl, "--/--");
-    lv_label_set_text(ref.unit_lbl, "");
+    std::string normalized_unit = weather_forecast_unit_symbol(unit);
+    lv_label_set_text(ref.unit_lbl, normalized_unit.c_str());
     return;
   }
   char buf[24];
   char high_buf[12];
   char low_buf[12];
   if (high == WEATHER_FORECAST_TEMP_MISSING) snprintf(high_buf, sizeof(high_buf), "--");
-  else snprintf(high_buf, sizeof(high_buf), "%d", high);
+  else snprintf(high_buf, sizeof(high_buf), "%d", weather_forecast_display_temp(high, unit));
   if (low == WEATHER_FORECAST_TEMP_MISSING) snprintf(low_buf, sizeof(low_buf), "--");
-  else snprintf(low_buf, sizeof(low_buf), "%d", low);
+  else snprintf(low_buf, sizeof(low_buf), "%d", weather_forecast_display_temp(low, unit));
   snprintf(buf, sizeof(buf), "%s/%s", high_buf, low_buf);
   lv_label_set_text(ref.value_lbl, buf);
   std::string normalized_unit = weather_forecast_unit_symbol(unit);
@@ -488,8 +1678,11 @@ inline void apply_weather_forecast_card_text(const WeatherForecastCardRef &ref,
 
 inline void apply_weather_forecast_to_entity(const std::string &entity_id,
                                              const std::string &day,
-                                             bool valid, int high, int low,
+                                             bool valid, float high, float low,
                                              const std::string &unit) {
+  ESP_LOGI("weather_forecast", "Applying %s forecast for %s: %s high=%.1f low=%.1f unit=%s",
+    day.c_str(), entity_id.c_str(), valid ? "valid" : "unavailable",
+    high, low, unit.c_str());
   WeatherForecastCardRef *refs = weather_forecast_card_refs();
   int count = weather_forecast_card_count();
   for (int i = 0; i < count; i++) {
@@ -498,12 +1691,87 @@ inline void apply_weather_forecast_to_entity(const std::string &entity_id,
       refs[i].high = high;
       refs[i].low = low;
       refs[i].source_unit = unit;
+      refs[i].status_label = "";
+      apply_control_availability(refs[i].btn, refs[i].btn, valid, false);
       apply_weather_forecast_card_text(refs[i], valid, high, low, unit);
+      notify_dashboard_content_changed();
     }
   }
 }
 
-inline void register_weather_forecast_card(lv_obj_t *value_lbl, lv_obj_t *unit_lbl,
+inline void apply_weather_forecast_unavailable_for_entity(const std::string &entity_id) {
+  ESP_LOGW("weather_forecast", "Marking forecast unavailable for %s", entity_id.c_str());
+  WeatherForecastCardRef *refs = weather_forecast_card_refs();
+  int count = weather_forecast_card_count();
+  for (int i = 0; i < count; i++) {
+    if (refs[i].entity_id == entity_id) {
+      refs[i].valid = false;
+      refs[i].high = 0;
+      refs[i].low = 0;
+      refs[i].source_unit = "";
+      refs[i].status_label = "";
+      apply_control_availability(refs[i].btn, refs[i].btn, false, false);
+      apply_weather_forecast_card_text(refs[i], false, 0, 0, "");
+      notify_dashboard_content_changed();
+    }
+  }
+}
+
+inline void apply_weather_forecast_unavailable_all() {
+  ESP_LOGW("weather_forecast", "Marking all forecast cards unavailable");
+  WeatherForecastCardRef *refs = weather_forecast_card_refs();
+  int count = weather_forecast_card_count();
+  for (int i = 0; i < count; i++) {
+    refs[i].valid = false;
+    refs[i].high = 0;
+    refs[i].low = 0;
+    refs[i].source_unit = "";
+    refs[i].status_label = "";
+    apply_control_availability(refs[i].btn, refs[i].btn, false, false);
+    apply_weather_forecast_card_text(refs[i], false, 0, 0, "");
+  }
+  if (count > 0) notify_dashboard_content_changed();
+}
+
+inline void apply_weather_forecast_actions_required_for_entity(const std::string &entity_id) {
+  ESP_LOGW("weather_forecast",
+    "Forecast request timed out for %s; check that this ESPHome device is allowed to perform Home Assistant actions",
+    entity_id.c_str());
+  WeatherForecastCardRef *refs = weather_forecast_card_refs();
+  int count = weather_forecast_card_count();
+  for (int i = 0; i < count; i++) {
+    if (refs[i].entity_id == entity_id) {
+      refs[i].valid = false;
+      refs[i].high = 0;
+      refs[i].low = 0;
+      refs[i].source_unit = "";
+      refs[i].status_label = "";
+      apply_control_availability(refs[i].btn, refs[i].btn, false, false);
+      apply_weather_forecast_card_text(refs[i], false, 0, 0, "");
+      notify_dashboard_content_changed();
+    }
+  }
+}
+
+inline bool weather_forecast_error_is_timeout(const std::string &message) {
+  std::string lower;
+  lower.reserve(message.size());
+  for (char ch : message) {
+    lower.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
+  }
+  return lower.find("timeout") != std::string::npos ||
+         lower.find("timed out") != std::string::npos;
+}
+
+inline bool weather_forecast_request_matches(const std::string &entity_id,
+                                             const std::string &day,
+                                             const std::string &other_entity_id,
+                                             const std::string &other_day) {
+  return entity_id == other_entity_id && day == other_day;
+}
+
+inline void register_weather_forecast_card(lv_obj_t *btn,
+                                           lv_obj_t *value_lbl, lv_obj_t *unit_lbl,
                                            lv_obj_t *label_lbl,
                                            const std::string &entity_id,
                                            const std::string &day,
@@ -514,8 +1782,11 @@ inline void register_weather_forecast_card(lv_obj_t *value_lbl, lv_obj_t *unit_l
     return;
   }
   weather_forecast_card_refs()[count++] = {
-    value_lbl, unit_lbl, label_lbl, entity_id, day, label, false, 0, 0, ""
+    btn, value_lbl, unit_lbl, label_lbl, entity_id, day, label, "", false, 0, 0, ""
   };
+  apply_control_availability(weather_forecast_card_refs()[count - 1].btn,
+                             weather_forecast_card_refs()[count - 1].btn,
+                             false, false);
   apply_weather_forecast_card_text(weather_forecast_card_refs()[count - 1], false, 0, 0, "");
 }
 
@@ -527,106 +1798,426 @@ inline bool weather_forecast_entity_id_safe(const std::string &entity_id) {
   return true;
 }
 
-inline bool parse_weather_forecast_temp(const std::string &value, int &out) {
+inline bool parse_weather_forecast_temp(const std::string &value, float &out) {
   if (value.empty()) return false;
   char *end = nullptr;
   float parsed = strtof(value.c_str(), &end);
   if (end == value.c_str()) return false;
-  out = static_cast<int>(parsed >= 0 ? parsed + 0.5f : parsed - 0.5f);
+  if (!std::isfinite(parsed)) return false;
+  out = parsed;
   return true;
 }
 
+struct WeatherForecastPayload {
+  bool today_valid = false;
+  float today_high = WEATHER_FORECAST_TEMP_MISSING;
+  float today_low = WEATHER_FORECAST_TEMP_MISSING;
+  bool tomorrow_valid = false;
+  float tomorrow_high = WEATHER_FORECAST_TEMP_MISSING;
+  float tomorrow_low = WEATHER_FORECAST_TEMP_MISSING;
+  std::string unit;
+};
+
 inline bool parse_weather_forecast_payload(const std::string &payload,
-                                           int &high, int &low,
-                                           std::string &unit) {
+                                           WeatherForecastPayload &out) {
   size_t p1 = payload.find('|');
   if (p1 == std::string::npos) return false;
   size_t p2 = payload.find('|', p1 + 1);
   if (p2 == std::string::npos) return false;
-  std::string high_text = payload.substr(0, p1);
-  std::string low_text = payload.substr(p1 + 1, p2 - p1 - 1);
-  unit = payload.substr(p2 + 1);
-  high = WEATHER_FORECAST_TEMP_MISSING;
-  low = WEATHER_FORECAST_TEMP_MISSING;
-  bool has_high = parse_weather_forecast_temp(high_text, high);
-  bool has_low = parse_weather_forecast_temp(low_text, low);
-  return has_high || has_low;
+  size_t p3 = payload.find('|', p2 + 1);
+  if (p3 == std::string::npos) return false;
+  size_t p4 = payload.find('|', p3 + 1);
+  if (p4 == std::string::npos) return false;
+
+  std::string today_high_text = payload.substr(0, p1);
+  std::string today_low_text = payload.substr(p1 + 1, p2 - p1 - 1);
+  std::string tomorrow_high_text = payload.substr(p2 + 1, p3 - p2 - 1);
+  std::string tomorrow_low_text = payload.substr(p3 + 1, p4 - p3 - 1);
+  out.unit = payload.substr(p4 + 1);
+
+  bool today_has_high = parse_weather_forecast_temp(today_high_text, out.today_high);
+  bool today_has_low = parse_weather_forecast_temp(today_low_text, out.today_low);
+  bool tomorrow_has_high = parse_weather_forecast_temp(tomorrow_high_text, out.tomorrow_high);
+  bool tomorrow_has_low = parse_weather_forecast_temp(tomorrow_low_text, out.tomorrow_low);
+  out.today_valid = today_has_high || today_has_low;
+  out.tomorrow_valid = tomorrow_has_high || tomorrow_has_low;
+  return out.today_valid || out.tomorrow_valid;
 }
 
-inline std::string weather_forecast_response_template(const std::string &entity_id,
-                                                      const std::string &day) {
-  const char *target_date_template = day == "today"
-    ? "now().date().isoformat()"
-    : "(now().date() + timedelta(days=1)).isoformat()";
+inline std::string weather_forecast_response_template(const std::string &entity_id) {
   return std::string("{% set entity = '") + entity_id + "' %}"
-    "{% set forecasts = response.get(entity, {}).get('forecast', []) %}"
-    "{% set target_date = " + target_date_template + " %}"
-    "{% set ns = namespace(forecast=none) %}"
-    "{% for item in forecasts %}"
-    "{% if ns.forecast is none and item.datetime is defined and item.datetime[:10] == target_date %}"
-    "{% set ns.forecast = item %}"
-    "{% endif %}"
+    "{% set response_data = response if response is defined and response is not none else {} %}"
+    "{% set entity_response = response_data if 'forecast' in response_data else (response_data[entity] if entity in response_data else {}) %}"
+    "{% set forecasts = entity_response['forecast'] if 'forecast' in entity_response else [] %}"
+    "{% set today_date = now().date() %}{% set tomorrow_date = (now() + timedelta(days=1)).date() %}"
+    "{% set ns = namespace(today=none, tomorrow=none) %}{% for item in forecasts %}"
+    "{% set item_dt = as_datetime(item['datetime']) if 'datetime' in item else none %}{% set item_date = as_local(item_dt).date() if item_dt is not none else (as_datetime(item['date']).date() if 'date' in item else none) %}"
+    "{% if item_date == today_date and ns.today is none %}{% set ns.today = item %}{% elif item_date == tomorrow_date and ns.tomorrow is none %}{% set ns.tomorrow = item %}{% endif %}"
     "{% endfor %}"
-    "{% set fallback_index = 0 if target_date == now().date().isoformat() else 1 %}"
-    "{% set f = ns.forecast if ns.forecast is not none else (forecasts[fallback_index] if forecasts|length > fallback_index else (forecasts[0] if forecasts|length > 0 else none)) %}"
-    "{% set high = f.temperature if f is not none and f.temperature is defined else (f.temperature_high if f is not none and f.temperature_high is defined else (f.high_temperature if f is not none and f.high_temperature is defined else (f.high if f is not none and f.high is defined else ''))) %}"
-    "{% set low = f.templow if f is not none and f.templow is defined else (f.temperature_low if f is not none and f.temperature_low is defined else (f.low_temperature if f is not none and f.low_temperature is defined else (f.low if f is not none and f.low is defined else ''))) %}"
-    "{{ high }}|{{ low }}|"
-    "{{ state_attr(entity, 'temperature_unit') or '' }}";
+    "{% set today = ns.today if ns.today is not none else (forecasts[0] if forecasts|length > 0 else none) %}"
+    "{% set tomorrow = ns.tomorrow if ns.tomorrow is not none else (forecasts[1] if forecasts|length > 1 else none) %}"
+    "{% set high_keys = ['temperature','native_temperature','temperature_high','native_temperature_high','high_temperature','max_temperature','temperature_max','temp_high','max_temp','high'] %}"
+    "{% set low_keys = ['templow','native_templow','temperature_low','native_temperature_low','low_temperature','min_temperature','temperature_min','temp_low','min_temp','low'] %}"
+    "{% set unit_keys = ['temperature_unit','native_temperature_unit','unit_of_measurement','native_unit_of_measurement','unit'] %}"
+    "{% set out = namespace(today_high='', today_low='', tomorrow_high='', tomorrow_low='', unit='') %}"
+    "{% for key in high_keys %}{% if out.today_high == '' and today is not none and key in today %}{% set out.today_high = today[key] %}{% endif %}{% if out.tomorrow_high == '' and tomorrow is not none and key in tomorrow %}{% set out.tomorrow_high = tomorrow[key] %}{% endif %}{% endfor %}"
+    "{% for key in low_keys %}{% if out.today_low == '' and today is not none and key in today %}{% set out.today_low = today[key] %}{% endif %}{% if out.tomorrow_low == '' and tomorrow is not none and key in tomorrow %}{% set out.tomorrow_low = tomorrow[key] %}{% endif %}{% endfor %}"
+    "{% for key in unit_keys %}{% if out.unit == '' and key in entity_response %}{% set out.unit = entity_response[key] %}{% endif %}{% if out.unit == '' and today is not none and key in today %}{% set out.unit = today[key] %}{% endif %}{% if out.unit == '' and tomorrow is not none and key in tomorrow %}{% set out.unit = tomorrow[key] %}{% endif %}{% endfor %}"
+    "{{ out.today_high }}|{{ out.today_low }}|{{ out.tomorrow_high }}|{{ out.tomorrow_low }}|"
+    "{{ out.unit or state_attr(entity, 'temperature_unit') or state_attr(entity, 'native_temperature_unit') or state_attr(entity, 'unit_of_measurement') or '' }}";
 }
 
 inline uint32_t next_weather_forecast_call_id() {
-  static uint32_t call_id = 100000;
+  static uint32_t call_id = 1;
   return call_id++;
+}
+
+inline WeatherForecastPendingRequest *weather_forecast_pending_requests() {
+  static WeatherForecastPendingRequest requests[WEATHER_FORECAST_PENDING_MAX];
+  return requests;
+}
+
+inline WeatherForecastQueuedRequest *weather_forecast_queued_requests() {
+  static WeatherForecastQueuedRequest requests[WEATHER_FORECAST_PENDING_MAX];
+  return requests;
+}
+
+inline WeatherForecastRetryRequest *weather_forecast_retry_requests() {
+  static WeatherForecastRetryRequest requests[WEATHER_FORECAST_PENDING_MAX];
+  return requests;
+}
+
+inline uint32_t &weather_forecast_action_ready_ms() {
+  static uint32_t due_ms = 0;
+  return due_ms;
+}
+
+inline bool weather_forecast_actions_ready() {
+  if (!ha_api_state_connected()) {
+    weather_forecast_action_ready_ms() = 0;
+    return false;
+  }
+  uint32_t &due_ms = weather_forecast_action_ready_ms();
+  uint32_t now = esphome::millis();
+  if (due_ms == 0) {
+    due_ms = now + 10000;
+    ESP_LOGI("weather_forecast",
+      "Waiting 10 seconds for Home Assistant action subscription before requesting forecasts");
+    return false;
+  }
+  return (int32_t) (now - due_ms) >= 0;
+}
+
+inline bool weather_forecast_pending_key(const std::string &entity_id,
+                                         const std::string &day) {
+  WeatherForecastPendingRequest *requests = weather_forecast_pending_requests();
+  for (int i = 0; i < WEATHER_FORECAST_PENDING_MAX; i++) {
+    if (requests[i].call_id != 0 &&
+        weather_forecast_request_matches(entity_id, day, requests[i].entity_id, requests[i].day)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+inline bool weather_forecast_queue_key(const std::string &entity_id,
+                                       const std::string &day) {
+  WeatherForecastQueuedRequest *requests = weather_forecast_queued_requests();
+  for (int i = 0; i < WEATHER_FORECAST_PENDING_MAX; i++) {
+    if (!requests[i].entity_id.empty() &&
+        weather_forecast_request_matches(entity_id, day, requests[i].entity_id, requests[i].day)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+inline bool weather_forecast_retry_key(const std::string &entity_id,
+                                       const std::string &day) {
+  WeatherForecastRetryRequest *requests = weather_forecast_retry_requests();
+  for (int i = 0; i < WEATHER_FORECAST_PENDING_MAX; i++) {
+    if (!requests[i].entity_id.empty() &&
+        weather_forecast_request_matches(entity_id, day, requests[i].entity_id, requests[i].day)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+inline bool weather_forecast_any_pending() {
+  WeatherForecastPendingRequest *requests = weather_forecast_pending_requests();
+  for (int i = 0; i < WEATHER_FORECAST_PENDING_MAX; i++) {
+    if (requests[i].call_id != 0) return true;
+  }
+  return false;
+}
+
+inline bool weather_forecast_track_pending(uint32_t call_id,
+                                           const std::string &entity_id,
+                                           const std::string &day) {
+  if (call_id == 0) return false;
+  WeatherForecastPendingRequest *requests = weather_forecast_pending_requests();
+  for (int i = 0; i < WEATHER_FORECAST_PENDING_MAX; i++) {
+    if (requests[i].call_id == call_id) return true;
+  }
+  for (int i = 0; i < WEATHER_FORECAST_PENDING_MAX; i++) {
+    if (requests[i].call_id == 0) {
+      requests[i].call_id = call_id;
+      requests[i].started_ms = esphome::millis();
+      requests[i].entity_id = entity_id;
+      requests[i].day = day;
+      return true;
+    }
+  }
+  return false;
+}
+
+inline void weather_forecast_clear_pending(uint32_t call_id) {
+  if (call_id == 0) return;
+  WeatherForecastPendingRequest *requests = weather_forecast_pending_requests();
+  for (int i = 0; i < WEATHER_FORECAST_PENDING_MAX; i++) {
+    if (requests[i].call_id == call_id) requests[i] = WeatherForecastPendingRequest();
+  }
+}
+
+inline void weather_forecast_clear_queue() {
+  WeatherForecastQueuedRequest *requests = weather_forecast_queued_requests();
+  for (int i = 0; i < WEATHER_FORECAST_PENDING_MAX; i++) {
+    requests[i] = WeatherForecastQueuedRequest();
+  }
+}
+
+inline void weather_forecast_clear_retry(const std::string &entity_id,
+                                         const std::string &day) {
+  WeatherForecastRetryRequest *requests = weather_forecast_retry_requests();
+  for (int i = 0; i < WEATHER_FORECAST_PENDING_MAX; i++) {
+    if (!requests[i].entity_id.empty() &&
+        weather_forecast_request_matches(entity_id, day, requests[i].entity_id, requests[i].day)) {
+      requests[i] = WeatherForecastRetryRequest();
+    }
+  }
+}
+
+inline void weather_forecast_clear_retries() {
+  WeatherForecastRetryRequest *requests = weather_forecast_retry_requests();
+  for (int i = 0; i < WEATHER_FORECAST_PENDING_MAX; i++) {
+    requests[i] = WeatherForecastRetryRequest();
+  }
+}
+
+inline bool weather_forecast_schedule_retry(const std::string &entity_id,
+                                            const std::string &day,
+                                            const char *reason) {
+  if (!weather_forecast_entity_id_safe(entity_id)) return false;
+  if (weather_forecast_pending_key(entity_id, day) ||
+      weather_forecast_queue_key(entity_id, day) ||
+      weather_forecast_retry_key(entity_id, day)) {
+    return true;
+  }
+  WeatherForecastRetryRequest *requests = weather_forecast_retry_requests();
+  for (int i = 0; i < WEATHER_FORECAST_PENDING_MAX; i++) {
+    if (requests[i].entity_id.empty()) {
+      requests[i].entity_id = entity_id;
+      requests[i].day = day;
+      requests[i].due_ms = esphome::millis() + WEATHER_FORECAST_RETRY_DELAY_MS;
+      ESP_LOGW("weather_forecast", "Retrying forecast request for %s in %u seconds: %s",
+        entity_id.c_str(), (unsigned) (WEATHER_FORECAST_RETRY_DELAY_MS / 1000),
+        reason ? reason : "failed");
+      return true;
+    }
+  }
+  ESP_LOGW("weather_forecast", "Too many delayed forecast retries; skipping %s",
+    entity_id.c_str());
+  return false;
+}
+
+inline bool weather_forecast_enqueue(const std::string &entity_id,
+                                     const std::string &day) {
+  if (!weather_forecast_entity_id_safe(entity_id)) return false;
+  weather_forecast_clear_retry(entity_id, day);
+  if (weather_forecast_pending_key(entity_id, day) ||
+      weather_forecast_queue_key(entity_id, day)) {
+    return true;
+  }
+  WeatherForecastQueuedRequest *requests = weather_forecast_queued_requests();
+  for (int i = 0; i < WEATHER_FORECAST_PENDING_MAX; i++) {
+    if (requests[i].entity_id.empty()) {
+      requests[i].entity_id = entity_id;
+      requests[i].day = day;
+      return true;
+    }
+  }
+  ESP_LOGW("weather_forecast", "Too many queued forecast requests; skipping %s",
+    entity_id.c_str());
+  return false;
+}
+
+inline bool weather_forecast_dequeue(std::string &entity_id,
+                                     std::string &day) {
+  WeatherForecastQueuedRequest *requests = weather_forecast_queued_requests();
+  for (int i = 0; i < WEATHER_FORECAST_PENDING_MAX; i++) {
+    if (requests[i].entity_id.empty()) continue;
+    entity_id = requests[i].entity_id;
+    day = requests[i].day;
+    requests[i] = WeatherForecastQueuedRequest();
+    return true;
+  }
+  return false;
+}
+
+inline bool weather_forecast_enqueue_due_retries() {
+  if (!ha_api_state_connected()) return false;
+  WeatherForecastRetryRequest *requests = weather_forecast_retry_requests();
+  uint32_t now = esphome::millis();
+  bool queued = false;
+  for (int i = 0; i < WEATHER_FORECAST_PENDING_MAX; i++) {
+    if (requests[i].entity_id.empty()) continue;
+    if ((int32_t) (now - requests[i].due_ms) < 0) continue;
+    std::string entity_id = requests[i].entity_id;
+    std::string day = requests[i].day;
+    requests[i] = WeatherForecastRetryRequest();
+    queued = weather_forecast_enqueue(entity_id, day) || queued;
+  }
+  return queued;
+}
+
+inline void weather_forecast_send_next_queued();
+
+inline void weather_forecast_cancel_pending_requests() {
+  weather_forecast_action_ready_ms() = 0;
+  weather_forecast_clear_queue();
+  weather_forecast_clear_retries();
+  WeatherForecastPendingRequest *requests = weather_forecast_pending_requests();
+  for (int i = 0; i < WEATHER_FORECAST_PENDING_MAX; i++) {
+    uint32_t call_id = requests[i].call_id;
+    if (call_id == 0) continue;
+    requests[i] = WeatherForecastPendingRequest();
+    ha_cancel_action_response_callback(call_id, "api disconnected");
+  }
+}
+
+inline bool weather_forecast_cancel_stale_requests() {
+  WeatherForecastPendingRequest *requests = weather_forecast_pending_requests();
+  uint32_t now = esphome::millis();
+  for (int i = 0; i < WEATHER_FORECAST_PENDING_MAX; i++) {
+    uint32_t call_id = requests[i].call_id;
+    if (call_id == 0) continue;
+    if (now - requests[i].started_ms < WEATHER_FORECAST_REQUEST_TIMEOUT_MS) continue;
+    std::string entity_id = requests[i].entity_id;
+    requests[i] = WeatherForecastPendingRequest();
+    ESP_LOGW("weather_forecast", "Cancelling forecast request %u for %s: timeout",
+      (unsigned) call_id, entity_id.c_str());
+    ha_cancel_action_response_callback(call_id, "timeout");
+    return true;
+  }
+  return false;
 }
 
 inline void request_weather_forecast_entity(const std::string &entity_id,
                                             const std::string &day) {
-  if (!weather_forecast_entity_id_safe(entity_id) || esphome::api::global_api_server == nullptr) {
-    apply_weather_forecast_to_entity(entity_id, day, false, 0, 0, "");
+  if (!weather_forecast_entity_id_safe(entity_id) ||
+      !ha_api_state_connected() ||
+      !weather_forecast_actions_ready()) {
+    apply_weather_forecast_unavailable_for_entity(entity_id);
     return;
   }
+#ifdef ESP_PLATFORM
+  size_t internal_free = heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL);
+  size_t internal_largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL);
+  if (internal_free < HA_ACTION_INTERNAL_FREE_MIN_BYTES ||
+      internal_largest < HA_ACTION_INTERNAL_LARGEST_MIN_BYTES) {
+    ESP_LOGW("weather_forecast",
+             "Deferring forecast request for %s: internal heap free=%u largest=%u",
+             entity_id.c_str(), (unsigned) internal_free, (unsigned) internal_largest);
+    weather_forecast_schedule_retry(entity_id, day, "low internal heap");
+    return;
+  }
+#endif
 
   esphome::api::HomeassistantActionRequest req;
-  req.service = decltype(req.service)("weather.get_forecasts");
-  req.is_event = false;
-  req.call_id = next_weather_forecast_call_id();
+  uint32_t call_id = next_weather_forecast_call_id();
+  if (!ha_action_begin(req, "weather.get_forecasts", false, 2, call_id)) {
+    apply_weather_forecast_unavailable_for_entity(entity_id);
+    weather_forecast_schedule_retry(entity_id, day, "request setup failed");
+    return;
+  }
   req.wants_response = true;
-  std::string response_template = weather_forecast_response_template(entity_id, day);
+  std::string response_template = weather_forecast_response_template(entity_id);
   req.response_template = decltype(req.response_template)(response_template);
-  req.data.init(2);
-  auto &entity_kv = req.data.emplace_back();
-  entity_kv.key = decltype(entity_kv.key)("entity_id");
-  entity_kv.value = decltype(entity_kv.value)(entity_id.c_str());
-  auto &type_kv = req.data.emplace_back();
-  type_kv.key = decltype(type_kv.key)("type");
-  type_kv.value = decltype(type_kv.value)("daily");
+  ha_action_add_entity(req, entity_id);
+  ha_action_add_data(req, "type", "daily");
+  uint32_t generation = ha_subscription_generation();
 
-  esphome::api::global_api_server->register_action_response_callback(
+  if (!ha_register_action_response_callback(
     req.call_id,
-    [entity_id, day](const esphome::api::ActionResponse &response) {
+    [entity_id, day, call_id = req.call_id, generation](const esphome::api::ActionResponse &response) {
+      weather_forecast_clear_pending(call_id);
+      if (generation != ha_subscription_generation()) {
+        weather_forecast_send_next_queued();
+        return;
+      }
       if (!response.is_success()) {
+        std::string error_message = response.get_error_message();
         ESP_LOGW("weather_forecast", "Forecast request failed for %s: %s",
-          entity_id.c_str(), response.get_error_message().c_str());
-        apply_weather_forecast_to_entity(entity_id, day, false, 0, 0, "");
+          entity_id.c_str(), error_message.c_str());
+        if (weather_forecast_error_is_timeout(error_message)) {
+          apply_weather_forecast_actions_required_for_entity(entity_id);
+        } else {
+          apply_weather_forecast_unavailable_for_entity(entity_id);
+        }
+        weather_forecast_schedule_retry(entity_id, day, error_message.c_str());
+        weather_forecast_send_next_queued();
         return;
       }
       auto json = response.get_json();
       const char *payload = json["response"].as<const char *>();
       if (payload == nullptr) {
-        apply_weather_forecast_to_entity(entity_id, day, false, 0, 0, "");
+        ESP_LOGW("weather_forecast", "Forecast response for %s did not include a rendered payload",
+          entity_id.c_str());
+        apply_weather_forecast_unavailable_for_entity(entity_id);
+        weather_forecast_schedule_retry(entity_id, day, "empty response");
+        weather_forecast_send_next_queued();
         return;
       }
-      int high = 0;
-      int low = 0;
-      std::string unit;
-      bool valid = parse_weather_forecast_payload(payload, high, low, unit);
+      WeatherForecastPayload forecast;
+      bool valid = parse_weather_forecast_payload(payload, forecast);
       if (!valid) {
-        ESP_LOGW("weather_forecast", "No usable forecast temperatures for %s", entity_id.c_str());
+        ESP_LOGW("weather_forecast", "No usable forecast temperatures for %s: %s",
+          entity_id.c_str(), payload);
+        weather_forecast_schedule_retry(entity_id, day, "no usable forecast temperatures");
       }
-      apply_weather_forecast_to_entity(entity_id, day, valid, high, low, unit);
-    });
-  esphome::api::global_api_server->send_homeassistant_action(req);
+      apply_weather_forecast_to_entity(entity_id, "today", forecast.today_valid,
+        forecast.today_high, forecast.today_low, forecast.unit);
+      apply_weather_forecast_to_entity(entity_id, "tomorrow", forecast.tomorrow_valid,
+        forecast.tomorrow_high, forecast.tomorrow_low, forecast.unit);
+      weather_forecast_send_next_queued();
+    })) {
+    apply_weather_forecast_unavailable_for_entity(entity_id);
+    weather_forecast_schedule_retry(entity_id, day, "callback setup failed");
+    return;
+  }
+  if (!weather_forecast_track_pending(req.call_id, entity_id, day)) {
+    ha_cancel_action_response_callback(req.call_id, "too many pending forecasts");
+    apply_weather_forecast_unavailable_for_entity(entity_id);
+    return;
+  }
+  ESP_LOGI("weather_forecast", "Requesting daily forecast for %s", entity_id.c_str());
+  if (!ha_action_send(req)) {
+    weather_forecast_clear_pending(req.call_id);
+    ha_cancel_action_response_callback(req.call_id, "send failed");
+    apply_weather_forecast_unavailable_for_entity(entity_id);
+    weather_forecast_schedule_retry(entity_id, day, "send failed");
+    weather_forecast_send_next_queued();
+  }
+}
+
+inline void weather_forecast_send_next_queued() {
+  if (!weather_forecast_actions_ready() || weather_forecast_any_pending()) return;
+  weather_forecast_enqueue_due_retries();
+  std::string entity_id;
+  std::string day;
+  if (!weather_forecast_dequeue(entity_id, day)) return;
+  request_weather_forecast_entity(entity_id, day);
 }
 
 inline void refresh_weather_forecast_cards() {
@@ -638,8 +2229,7 @@ inline void refresh_weather_forecast_cards() {
   for (int i = 0; i < count; i++) {
     const std::string &entity_id = refs[i].entity_id;
     if (entity_id.empty()) continue;
-    const std::string &day = refs[i].day;
-    std::string request_key = entity_id + "|" + day;
+    std::string request_key = entity_id;
     bool already_requested = false;
     for (const auto &existing : requested) {
       if (existing == request_key) {
@@ -649,8 +2239,9 @@ inline void refresh_weather_forecast_cards() {
     }
     if (already_requested) continue;
     requested.push_back(request_key);
-    request_weather_forecast_entity(entity_id, day);
+    weather_forecast_enqueue(entity_id, "");
   }
+  weather_forecast_send_next_queued();
 }
 
 struct ClimateControlCtx;
@@ -673,6 +2264,7 @@ inline void refresh_temperature_unit_labels() {
     climate_update_card(climate_refs[i]);
     climate_control_set_modal_value(climate_refs[i]);
   }
+  if (weather_count > 0 || climate_count > 0) notify_dashboard_content_changed();
 }
 
 inline const char* garage_closed_icon(const std::string &icon) {
@@ -684,7 +2276,7 @@ inline const char* garage_open_icon(const std::string &icon_on) {
 }
 
 inline bool garage_command_mode(const std::string &sensor) {
-  return sensor == "open" || sensor == "close";
+  return card_runtime_garage_command_mode(sensor);
 }
 
 inline const char *garage_command_icon(const ParsedCfg &p) {
@@ -694,9 +2286,21 @@ inline const char *garage_command_icon(const ParsedCfg &p) {
 
 inline const char *garage_card_label(const ParsedCfg &p) {
   if (!p.label.empty()) return p.label.c_str();
-  if (p.sensor == "open") return "Open";
-  if (p.sensor == "close") return "Close";
-  return "Garage Door";
+  if (p.sensor == "open") return espcontrol_i18n("Open");
+  if (p.sensor == "close") return espcontrol_i18n("Close");
+  return espcontrol_i18n("Garage Door");
+}
+
+inline bool garage_card_show_status(const ParsedCfg &p) {
+  return normalize_garage_label_display(cfg_option_value(p.options, "label_display")) == "status";
+}
+
+inline bool alarm_card_show_status_icon(const ParsedCfg &p) {
+  return normalize_alarm_icon_display(cfg_option_value(p.options, "icon_display")) == "status";
+}
+
+inline bool alarm_card_show_status_label(const ParsedCfg &p) {
+  return normalize_alarm_label_display(cfg_option_value(p.options, "label_display")) == "status";
 }
 
 inline const char* lock_locked_icon(const std::string &icon) {
@@ -708,7 +2312,7 @@ inline const char* lock_unlocked_icon(const std::string &icon_on) {
 }
 
 inline bool lock_command_mode(const std::string &sensor) {
-  return sensor == "lock" || sensor == "unlock";
+  return card_runtime_lock_command_mode(sensor);
 }
 
 inline const char *lock_command_icon(const ParsedCfg &p) {
@@ -718,9 +2322,9 @@ inline const char *lock_command_icon(const ParsedCfg &p) {
 
 inline const char *lock_card_label(const ParsedCfg &p) {
   if (!p.label.empty()) return p.label.c_str();
-  if (p.sensor == "lock") return "Lock";
-  if (p.sensor == "unlock") return "Unlock";
-  return "Lock";
+  if (p.sensor == "lock") return espcontrol_i18n("Lock");
+  if (p.sensor == "unlock") return espcontrol_i18n("Unlock");
+  return espcontrol_i18n("Lock");
 }
 
 // ── Internal relay controls ───────────────────────────────────────────
@@ -902,7 +2506,7 @@ inline InternalRelayControl *find_internal_relay(const std::string &key) {
 }
 
 inline bool internal_relay_push_mode(const ParsedCfg &p) {
-  return p.sensor == "push";
+  return card_runtime_internal_push_mode(p.sensor);
 }
 
 inline bool internal_relay_state(const std::string &key) {
@@ -914,7 +2518,7 @@ inline std::string internal_relay_label(const ParsedCfg &p) {
   if (!p.label.empty()) return p.label;
   InternalRelayControl *relay = find_internal_relay(p.entity);
   if (relay && !relay->label.empty()) return relay->label;
-  return p.entity.empty() ? std::string("Relay") : sentence_cap_text(p.entity);
+  return p.entity.empty() ? espcontrol_i18n(std::string("Relay")) : sentence_cap_text(p.entity);
 }
 
 inline const char *internal_relay_icon(const ParsedCfg &p, bool push_mode) {
@@ -926,8 +2530,7 @@ inline void apply_internal_relay_state(lv_obj_t *btn, lv_obj_t *icon_lbl,
                                        bool on, bool has_icon_on,
                                        const char *icon_off, const char *icon_on) {
   if (btn) {
-    if (on) lv_obj_add_state(btn, LV_STATE_CHECKED);
-    else lv_obj_clear_state(btn, LV_STATE_CHECKED);
+    set_card_checked_state(btn, on);
   }
   if (icon_lbl && has_icon_on)
     lv_label_set_text(icon_lbl, on ? icon_on : icon_off);
@@ -943,11 +2546,11 @@ inline void apply_internal_relay_parent_indicator(InternalRelayWatcher &w, bool 
     *w.child_was_on = false;
   }
   if (w.sp_on_count[w.parent_idx] > 0) {
-    lv_obj_add_state(w.parent_btn, LV_STATE_CHECKED);
+    set_card_checked_state(w.parent_btn, true);
     if (w.parent_has_alt_icon && w.parent_icon)
       lv_label_set_text(w.parent_icon, w.parent_on_glyph);
   } else {
-    lv_obj_clear_state(w.parent_btn, LV_STATE_CHECKED);
+    set_card_checked_state(w.parent_btn, false);
     if (w.parent_has_alt_icon && w.parent_icon)
       lv_label_set_text(w.parent_icon, w.parent_off_glyph);
   }

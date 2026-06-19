@@ -74,13 +74,16 @@ If there is no existing stable release, treat the first stable release as
 Use a published release, not a draft, so GitHub emits the `release.published`
 event and starts the firmware build.
 
+The `Build Release` workflow automatically replaces the release body with a
+detailed changelog after the release is published.
+
 Stable release:
 
 ```bash
 TAG="vX.Y.Z"
 gh release create "$TAG" \
   --target main \
-  --generate-notes \
+  --notes "Detailed changelog will be added automatically by the Build Release workflow." \
   --fail-on-no-commits
 ```
 
@@ -90,7 +93,7 @@ Pre-release:
 TAG="vX.Y.Z-beta.N"
 gh release create "$TAG" \
   --target main \
-  --generate-notes \
+  --notes "Detailed changelog will be added automatically by the Build Release workflow." \
   --fail-on-no-commits \
   --prerelease \
   --latest=false
@@ -151,12 +154,21 @@ gh release view "$TAG" \
 Expected release assets:
 
 ```text
-immich-frame.factory.bin
-immich-frame.ota.bin
-immich-frame-7inch.factory.bin
-immich-frame-7inch.ota.bin
-manifest.json
-manifest-7inch.json
+esp32-p4-86.factory.bin
+esp32-p4-86.manifest.json
+esp32-p4-86.ota.bin
+guition-esp32-p4-jc1060p470.factory.bin
+guition-esp32-p4-jc1060p470.manifest.json
+guition-esp32-p4-jc1060p470.ota.bin
+guition-esp32-p4-jc4880p443.factory.bin
+guition-esp32-p4-jc4880p443.manifest.json
+guition-esp32-p4-jc4880p443.ota.bin
+guition-esp32-p4-jc8012p4a1.factory.bin
+guition-esp32-p4-jc8012p4a1.manifest.json
+guition-esp32-p4-jc8012p4a1.ota.bin
+guition-esp32-s3-4848s040.factory.bin
+guition-esp32-s3-4848s040.manifest.json
+guition-esp32-s3-4848s040.ota.bin
 ```
 
 The `Deploy Docs` workflow is configured to run after a successful
@@ -164,7 +176,7 @@ The `Deploy Docs` workflow is configured to run after a successful
 availability:
 
 ```bash
-gh run list --workflow docs.yml --event workflow_run --limit 5
+gh run list --workflow pages.yml --event workflow_run --limit 5
 ```
 
 ## Report Back
@@ -173,6 +185,7 @@ Summarize in plain language:
 
 - Release tag and GitHub release URL
 - `Build Release` run URL and current result
+- Whether the automatic release notes update job ran
 - Whether the expected firmware assets are attached
 - Any docs deployment run URL if checked
 - Any action needed from the user, especially if a run failed

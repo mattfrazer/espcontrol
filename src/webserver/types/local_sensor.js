@@ -1,10 +1,26 @@
 // Local sensor card: displays a value from any ESPHome sensor component on the device.
-// The ESP32 auto-subscribes to the sensor's on_value callbacks — no firmware changes needed.
+// The ESP32 auto-subscribes to the sensor's on_value callbacks; no Home Assistant entity is required.
 // For computed/non-entity values, use send_local_sensor_update() as a fallback.
+var LOCAL_SENSOR_CARD_METADATA = {
+  entity: {
+    label: "Sensor Key",
+    idSuffix: "local-sensor-key",
+    placeholder: "e.g. room_temp",
+    domains: function () { return cardContractDomains("local_sensor"); },
+    bindName: "entity",
+    rerender: true,
+    requiredMessage: "Add a sensor key before saving.",
+  },
+};
+
 registerButtonType("local_sensor", {
-  label: "Local Sensor",
-  allowInSubpage: true,
+  label: function () { return cardContractCardLabel("local_sensor"); },
+  allowInSubpage: function () { return cardContractAllowInSubpage("local_sensor"); },
+  pickerKey: function () { return cardContractPickerKey("local_sensor"); },
+  hidden: function () { return cardContractHidden("local_sensor"); },
   hideLabel: true,
+  defaultConfig: function () { return cardContractDefaultConfig("local_sensor"); },
+  cardMetadata: LOCAL_SENSOR_CARD_METADATA,
   onSelect: function (b) {
     b.entity = "";
     b.sensor = "";

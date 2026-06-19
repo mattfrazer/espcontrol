@@ -22,6 +22,96 @@
       "codepoint": "F0156",
       "mdi": "close",
       "comment": "Modal close button"
+    },
+    {
+      "name": "Folder",
+      "codepoint": "F024B",
+      "mdi": "folder",
+      "comment": "Default subpage indicator"
+    },
+    {
+      "name": "Download",
+      "codepoint": "F01DA",
+      "mdi": "download",
+      "comment": "Firmware install update entity"
+    },
+    {
+      "name": "Tag",
+      "codepoint": "F04F9",
+      "mdi": "tag",
+      "comment": "Firmware version entity"
+    },
+    {
+      "name": "Update",
+      "codepoint": "F06B0",
+      "mdi": "update",
+      "comment": "Firmware update entities"
+    },
+    {
+      "name": "Wi-Fi Startup",
+      "codepoint": "F05A9",
+      "mdi": "wifi",
+      "comment": "Setup screens"
+    },
+    {
+      "name": "Wi-Fi",
+      "codepoint": "F0928",
+      "mdi": "wifi-strength-4",
+      "comment": "Setup screens"
+    },
+    {
+      "name": "Wi-Fi Strength Outline",
+      "codepoint": "F092F",
+      "mdi": "wifi-strength-outline",
+      "comment": "Network status"
+    },
+    {
+      "name": "Wi-Fi Strength 1",
+      "codepoint": "F091F",
+      "mdi": "wifi-strength-1",
+      "comment": "Network status"
+    },
+    {
+      "name": "Wi-Fi Strength 2",
+      "codepoint": "F0922",
+      "mdi": "wifi-strength-2",
+      "comment": "Network status"
+    },
+    {
+      "name": "Wi-Fi Strength 3",
+      "codepoint": "F0925",
+      "mdi": "wifi-strength-3",
+      "comment": "Network status"
+    },
+    {
+      "name": "Wi-Fi Strength Off Outline",
+      "codepoint": "F092E",
+      "mdi": "wifi-strength-off-outline",
+      "comment": "Network status"
+    },
+    {
+      "name": "Ethernet",
+      "codepoint": "F0200",
+      "mdi": "ethernet",
+      "comment": "Setup screens"
+    },
+    {
+      "name": "Home Assistant",
+      "codepoint": "F07D0",
+      "mdi": "home-assistant",
+      "comment": "Setup screens"
+    },
+    {
+      "name": "Image Card Loading",
+      "codepoint": "F02E9",
+      "mdi": "image",
+      "comment": "Image card loading state"
+    },
+    {
+      "name": "Image Card Unavailable",
+      "codepoint": "F02ED",
+      "mdi": "image-broken",
+      "comment": "Image card unavailable state"
     }
   ],
   "icons": [
@@ -49,6 +139,11 @@
       "name": "Air Purifier Off",
       "codepoint": "F1B57",
       "mdi": "air-purifier-off"
+    },
+    {
+      "name": "Airplane",
+      "codepoint": "F001D",
+      "mdi": "airplane"
     },
     {
       "name": "Alarm",
@@ -176,14 +271,34 @@
       "mdi": "battery-unknown"
     },
     {
+      "name": "Bathtub",
+      "codepoint": "F1818",
+      "mdi": "bathtub"
+    },
+    {
       "name": "Bed",
       "codepoint": "F02E3",
       "mdi": "bed"
     },
     {
+      "name": "Bed King",
+      "codepoint": "F0FD2",
+      "mdi": "bed-king"
+    },
+    {
+      "name": "Bed Queen",
+      "codepoint": "F0FD0",
+      "mdi": "bed-queen"
+    },
+    {
       "name": "Bell",
       "codepoint": "F009A",
       "mdi": "bell"
+    },
+    {
+      "name": "Bird",
+      "codepoint": "F15C6",
+      "mdi": "bird"
     },
     {
       "name": "Blinds",
@@ -231,6 +346,11 @@
       "mdi": "cast"
     },
     {
+      "name": "Cat",
+      "codepoint": "F011B",
+      "mdi": "cat"
+    },
+    {
       "name": "CCTV",
       "codepoint": "F07AE",
       "mdi": "cctv"
@@ -259,6 +379,11 @@
       "name": "Check",
       "codepoint": "F012C",
       "mdi": "check"
+    },
+    {
+      "name": "Chair Rolling",
+      "codepoint": "F0F48",
+      "mdi": "chair-rolling"
     },
     {
       "name": "Chevron Down",
@@ -316,6 +441,11 @@
       "mdi": "delete-outline"
     },
     {
+      "name": "Desk",
+      "codepoint": "F1239",
+      "mdi": "desk"
+    },
+    {
       "name": "Desk Lamp",
       "codepoint": "F095F",
       "mdi": "desk-lamp"
@@ -324,6 +454,11 @@
       "name": "Dishwasher",
       "codepoint": "F0AAC",
       "mdi": "dishwasher"
+    },
+    {
+      "name": "Dishwasher Off",
+      "codepoint": "F11B9",
+      "mdi": "dishwasher-off"
     },
     {
       "name": "Dog",
@@ -361,6 +496,11 @@
       "mdi": "tumble-dryer"
     },
     {
+      "name": "Dryer Off",
+      "codepoint": "F11BB",
+      "mdi": "tumble-dryer-off"
+    },
+    {
       "name": "EV Charger",
       "codepoint": "F05F1",
       "mdi": "ev-station"
@@ -369,6 +509,31 @@
       "name": "Fan",
       "codepoint": "F0210",
       "mdi": "fan"
+    },
+    {
+      "name": "Fan Off",
+      "codepoint": "F081D",
+      "mdi": "fan-off"
+    },
+    {
+      "name": "Fan Auto",
+      "codepoint": "F171D",
+      "mdi": "fan-auto"
+    },
+    {
+      "name": "Fan Speed 1",
+      "codepoint": "F1472",
+      "mdi": "fan-speed-1"
+    },
+    {
+      "name": "Fan Speed 2",
+      "codepoint": "F1473",
+      "mdi": "fan-speed-2"
+    },
+    {
+      "name": "Fan Speed 3",
+      "codepoint": "F1474",
+      "mdi": "fan-speed-3"
     },
     {
       "name": "Fire",
@@ -601,6 +766,11 @@
       "mdi": "light-switch"
     },
     {
+      "name": "Flood Light Down",
+      "codepoint": "F1987",
+      "mdi": "light-flood-down"
+    },
+    {
       "name": "Lightbulb",
       "codepoint": "F0335",
       "mdi": "lightbulb"
@@ -741,6 +911,11 @@
       "mdi": "motion-sensor"
     },
     {
+      "name": "Motion Sensor Off",
+      "codepoint": "F1435",
+      "mdi": "motion-sensor-off"
+    },
+    {
       "name": "Movie Roll",
       "codepoint": "F07DE",
       "mdi": "movie-roll"
@@ -751,6 +926,11 @@
       "mdi": "music"
     },
     {
+      "name": "Nintendo Switch",
+      "codepoint": "F07E1",
+      "mdi": "nintendo-switch"
+    },
+    {
       "name": "Outdoor Lamp",
       "codepoint": "F1054",
       "mdi": "outdoor-lamp"
@@ -759,6 +939,11 @@
       "name": "Oven",
       "codepoint": "F04DE",
       "mdi": "stove"
+    },
+    {
+      "name": "Palette",
+      "codepoint": "F03D8",
+      "mdi": "palette"
     },
     {
       "name": "Package",
@@ -786,9 +971,24 @@
       "mdi": "plus"
     },
     {
+      "name": "Pause",
+      "codepoint": "F03E4",
+      "mdi": "pause"
+    },
+    {
+      "name": "Play",
+      "codepoint": "F040A",
+      "mdi": "play"
+    },
+    {
       "name": "Play Pause",
       "codepoint": "F040E",
       "mdi": "play-pause"
+    },
+    {
+      "name": "PlayStation",
+      "codepoint": "F0414",
+      "mdi": "sony-playstation"
     },
     {
       "name": "Pool",
@@ -836,9 +1036,69 @@
       "mdi": "recycle"
     },
     {
+      "name": "Remote Back",
+      "codepoint": "F030D",
+      "mdi": "keyboard-backspace"
+    },
+    {
+      "name": "Remote Down",
+      "codepoint": "F0047",
+      "mdi": "arrow-down-bold-circle"
+    },
+    {
+      "name": "Remote Home",
+      "codepoint": "F07D2",
+      "mdi": "home-circle"
+    },
+    {
+      "name": "Remote Left",
+      "codepoint": "F004F",
+      "mdi": "arrow-left-bold-circle"
+    },
+    {
+      "name": "Remote OK",
+      "codepoint": "F05E0",
+      "mdi": "check-circle"
+    },
+    {
+      "name": "Remote Right",
+      "codepoint": "F0056",
+      "mdi": "arrow-right-bold-circle"
+    },
+    {
+      "name": "Remote Up",
+      "codepoint": "F005F",
+      "mdi": "arrow-up-bold-circle"
+    },
+    {
       "name": "Robot Vacuum",
       "codepoint": "F070D",
       "mdi": "robot-vacuum"
+    },
+    {
+      "name": "Robot Vacuum Alert",
+      "codepoint": "F1B5D",
+      "mdi": "robot-vacuum-alert"
+    },
+    {
+      "name": "Robot Vacuum Off",
+      "codepoint": "F1C01",
+      "mdi": "robot-vacuum-off"
+    },
+    {
+      "name": "Robot Vacuum Variant",
+      "codepoint": "F0908",
+      "mdi": "robot-vacuum-variant"
+    },
+    {
+      "name": "Robot Vacuum Variant Alert",
+      "codepoint": "F1B5E",
+      "mdi": "robot-vacuum-variant-alert"
+    },
+    {
+      "name": "Robot Vacuum Variant Off",
+      "codepoint": "F1C02",
+      "mdi": "robot-vacuum-variant-off"
     },
     {
       "name": "Roller Shade",
@@ -866,7 +1126,27 @@
       "mdi": "shield-home"
     },
     {
+      "name": "Shield Home",
+      "codepoint": "F068A",
+      "mdi": "shield-home"
+    },
+    {
+      "name": "Shield Lock",
+      "codepoint": "F099D",
+      "mdi": "shield-lock"
+    },
+    {
+      "name": "Shield Off",
+      "codepoint": "F099E",
+      "mdi": "shield-off"
+    },
+    {
       "name": "Shower",
+      "codepoint": "F09A0",
+      "mdi": "shower"
+    },
+    {
+      "name": "Shower Head",
       "codepoint": "F09A1",
       "mdi": "shower-head"
     },
@@ -901,9 +1181,19 @@
       "mdi": "snowflake-thermometer"
     },
     {
+      "name": "Silverware",
+      "codepoint": "F04A3",
+      "mdi": "silverware"
+    },
+    {
       "name": "Sofa",
       "codepoint": "F04B9",
       "mdi": "sofa"
+    },
+    {
+      "name": "Sofa Outline",
+      "codepoint": "F156D",
+      "mdi": "sofa-outline"
     },
     {
       "name": "Solar Panel",
@@ -956,6 +1246,21 @@
       "mdi": "string-lights-off"
     },
     {
+      "name": "Stove",
+      "codepoint": "F04DE",
+      "mdi": "stove"
+    },
+    {
+      "name": "Swap Horizontal",
+      "codepoint": "F04E1",
+      "mdi": "swap-horizontal"
+    },
+    {
+      "name": "Swap Vertical",
+      "codepoint": "F04E2",
+      "mdi": "swap-vertical"
+    },
+    {
       "name": "Power Socket UK",
       "codepoint": "F07E8",
       "mdi": "power-socket-uk"
@@ -979,6 +1284,11 @@
       "name": "Table",
       "codepoint": "F05BC",
       "mdi": "table-furniture"
+    },
+    {
+      "name": "Table Chair",
+      "codepoint": "F1061",
+      "mdi": "table-chair"
     },
     {
       "name": "Television",
@@ -1064,6 +1374,21 @@
       "name": "Trash Can Outline",
       "codepoint": "F0A7A",
       "mdi": "trash-can-outline"
+    },
+    {
+      "name": "Vacuum",
+      "codepoint": "F19A1",
+      "mdi": "vacuum"
+    },
+    {
+      "name": "Vacuum Outline",
+      "codepoint": "F19A2",
+      "mdi": "vacuum-outline"
+    },
+    {
+      "name": "View Headline",
+      "codepoint": "F0571",
+      "mdi": "view-headline"
     },
     {
       "name": "Volume High",

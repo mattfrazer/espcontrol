@@ -1,8 +1,157 @@
 // Read-only date card: displays either the day/month or local time/date.
+var DATE_TIME_CARD_METADATA = {
+  mode: {
+    label: "Type",
+    idSuffix: "calendar-mode",
+    options: [
+      { value: "clock", label: "Clock" },
+      { value: "datetime", label: "Time & Date" },
+      { value: "", label: "Date" },
+      { value: "timezone", label: "World Clock" }
+    ],
+    value: function (b) {
+      return dateTimeCardMode(b);
+    },
+    onChange: function (b, helpers) {
+      setDateTimeCardMode(b, this.value, helpers);
+    },
+  },
+  largeNumbers: {
+    label: function (b) {
+      return dateTimeLargeNumbersLabel(b);
+    },
+    idSuffix: "large-date-time-numbers",
+    supportedCardSize: function (b, helpers) {
+      var cardSize = (helpers && helpers.cardSize) || CARD_SIZE_SINGLE;
+      return dateTimeCardMode(b) === "clock"
+        ? cardSize === CARD_SIZE_WIDE || cardSize === CARD_SIZE_LARGE
+        : cardSize === CARD_SIZE_LARGE;
+    },
+    hideLabel: function (_b, helpers) {
+      return ((helpers && helpers.cardSize) || CARD_SIZE_SINGLE) === CARD_SIZE_WIDE;
+    },
+  },
+  preview: {
+    dateBadge: "calendar-month",
+    timezoneBadge: "map-clock",
+  },
+};
+
+function dateTimeCardMode(b) {
+  if (b && b.type === "clock") return "clock";
+  if (b && b.type === "timezone") return "timezone";
+  return b && b.precision === "datetime" ? "datetime" : "";
+}
+
+function dateTimeLargeNumbersLabel(b) {
+  var mode = dateTimeCardMode(b);
+  if (mode === "clock") return "Large Clock";
+  if (mode === "datetime") return "Large Time";
+  if (mode === "timezone") return "Large World Clock";
+  return "Large Date";
+}
+
+function defaultTimezoneCardEntity() {
+  return (typeof state !== "undefined" && state.timezone) || "UTC (GMT+0)";
+}
+
+function dateTimeModeOptionValues() {
+  var spec = cardContractOptionSpec("calendar", "date_time_mode");
+  return spec && spec.values ? spec.values.slice() : ["clock", "datetime", "", "timezone"];
+}
+
+function normalizeDateTimeCardMode(mode) {
+  mode = String(mode || "");
+  return dateTimeModeOptionValues().indexOf(mode) >= 0 ? mode : "";
+}
+
+function setDateTimeCardMode(b, mode, helpers) {
+  mode = normalizeDateTimeCardMode(mode);
+  if (b.type !== "timezone" && b.type !== "clock" && mode !== "timezone" && mode !== "clock") {
+    b.precision = mode === "datetime" ? "datetime" : "";
+    helpers.saveField("precision", b.precision);
+    return;
+  }
+
+  if (mode === "clock") {
+    b.type = "clock";
+    helpers.applyCardMetadataFields(b, helpers, {
+      type: "clock",
+      entity: "",
+      label: "",
+      icon: "Auto",
+      icon_on: "Auto",
+      sensor: "",
+      unit: "",
+      precision: "",
+      options: b.options,
+    });
+    renderButtonSettings();
+    return;
+  }
+
+  if (mode === "timezone") {
+    b.type = "timezone";
+    helpers.applyCardMetadataFields(b, helpers, {
+      type: "timezone",
+      entity: defaultTimezoneCardEntity,
+      label: "",
+      icon: "Auto",
+      icon_on: "Auto",
+      sensor: "",
+      unit: "",
+      precision: "",
+      options: b.options,
+    });
+    renderButtonSettings();
+    return;
+  }
+
+  b.type = "calendar";
+  helpers.applyCardMetadataFields(b, helpers, {
+    type: "calendar",
+    entity: "sensor.date",
+    label: "",
+    icon: "Auto",
+    icon_on: "Auto",
+    sensor: "",
+    unit: "",
+    precision: mode === "datetime" ? "datetime" : "",
+    options: b.options,
+  });
+  if (mode !== "datetime") b.precision = "";
+  renderButtonSettings();
+}
+
+function dateTimeCardTimeParts() {
+  var now = new Date();
+  var use12h = typeof state !== "undefined" && state.clockFormat === "12h";
+  var hour = now.getHours();
+  var minute = String(now.getMinutes()).padStart(2, "0");
+  var timeValue = "";
+
+  if (use12h) {
+    var hour12 = hour % 12;
+    if (hour12 === 0) hour12 = 12;
+    timeValue = String(hour12) + ":" + minute;
+  } else {
+    timeValue = String(hour).padStart(2, "0") + ":" + minute;
+  }
+
+  return {
+    value: timeValue,
+    unit: "",
+  };
+}
+
 registerButtonType("calendar", {
-  label: "Date & Time",
-  allowInSubpage: true,
+  label: function () { return cardContractCardLabel("calendar"); },
+  allowInSubpage: function () { return cardContractAllowInSubpage("calendar"); },
+  pickerKey: function () { return cardContractPickerKey("calendar"); },
+  hidden: function () { return cardContractHidden("calendar"); },
   hideLabel: true,
+  defaultConfig: function () { return cardContractDefaultConfig("calendar"); },
+  cardMetadata: DATE_TIME_CARD_METADATA,
   onSelect: function (b) {
     b.entity = "sensor.date";
     b.label = "";
@@ -14,97 +163,38 @@ registerButtonType("calendar", {
     b.precision = b.precision === "datetime" ? "datetime" : "";
   },
   renderSettings: function (panel, b, slot, helpers) {
-    var isLargeCard = helpers.cardSize === 4;
     if (!b.entity) b.entity = "sensor.date";
     if (b.precision !== "datetime") b.precision = "";
 
-    var modeField = helpers.selectField("Type", helpers.idPrefix + "calendar-mode", [
-      { value: "datetime", label: "Time & Date" },
-      { value: "", label: "Date" },
-      { value: "timezone", label: "World Clock" }
-    ], b.precision, function () {
-      if (this.value === "timezone") {
-        b.type = "timezone";
-        b.entity = (typeof state !== "undefined" && state.timezone) || "UTC (GMT+0)";
-        b.label = "";
-        b.icon = "Auto";
-        b.icon_on = "Auto";
-        b.sensor = "";
-        b.unit = "";
-        b.precision = "";
-        helpers.saveField("type", "timezone");
-        helpers.saveField("entity", b.entity);
-        helpers.saveField("label", "");
-        helpers.saveField("icon", "Auto");
-        helpers.saveField("icon_on", "Auto");
-        helpers.saveField("sensor", "");
-        helpers.saveField("unit", "");
-        helpers.saveField("precision", "");
-        helpers.saveField("options", b.options);
-        renderButtonSettings();
-      } else {
-        b.precision = this.value === "datetime" ? "datetime" : "";
-        helpers.saveField("precision", b.precision);
-      }
-    });
-    panel.appendChild(modeField.field);
-
-    if (isLargeCard) {
-      var largeNumbersToggle = helpers.toggleRow(
-        "Large Date / Time Numbers", helpers.idPrefix + "large-date-time-numbers",
-        cardLargeNumbersEnabled(b));
-      panel.appendChild(largeNumbersToggle.row);
-      largeNumbersToggle.input.addEventListener("change", function () {
-        setSensorLargeNumbersEnabled(b, this.checked);
-        helpers.saveField("options", b.options);
-      });
-    }
+    helpers.renderCardModeSelector(panel, b, helpers, DATE_TIME_CARD_METADATA);
+    helpers.renderCardLargeNumbersToggle(panel, b, helpers, DATE_TIME_CARD_METADATA);
   },
   renderPreview: function (b, helpers) {
     var now = new Date();
     var isDateTime = b.precision === "datetime";
+    var hideLabel = cardLargeNumbersHidePreviewLabel(b, helpers, DATE_TIME_CARD_METADATA);
+    var buttonClass = hideLabel
+      ? (isDateTime ? "sp-clock-wide-large" : "sp-date-time-wide-large")
+      : undefined;
     var day = String(now.getDate());
-    var month = now.toLocaleString("en", { month: "long" });
+    var month = typeof monthNameForIndex === "function"
+      ? monthNameForIndex(now.getMonth())
+      : now.toLocaleString("en", { month: "long" });
 
     if (isDateTime) {
-      var use12h = typeof state !== "undefined" && state.clockFormat === "12h";
-      var hour = now.getHours();
-      var minute = String(now.getMinutes()).padStart(2, "0");
-      var timeValue = "";
-      var timeUnit = "";
-
-      if (use12h) {
-        var hour12 = hour % 12;
-        if (hour12 === 0) hour12 = 12;
-        timeValue = String(hour12) + ":" + minute;
-        timeUnit = hour < 12 ? "am" : "pm";
-      } else {
-        timeValue = String(hour).padStart(2, "0") + ":" + minute;
-      }
+      var time = dateTimeCardTimeParts();
 
       return {
-        iconHtml:
-          '<span class="sp-sensor-preview' +
-            (helpers.cardSize === 4 && cardLargeNumbersEnabled(b) ? " sp-sensor-preview-large" : "") + '">' +
-            '<span class="sp-sensor-value">' + helpers.escHtml(timeValue) + '</span>' +
-            '<span class="sp-sensor-unit">' + helpers.escHtml(timeUnit) + '</span>' +
-          '</span>',
-        labelHtml:
-          '<span class="sp-btn-label-row"><span class="sp-btn-label">' +
-            helpers.escHtml(day + " " + month) +
-          '</span><span class="sp-type-badge mdi mdi-calendar-month"></span></span>',
+        buttonClass: buttonClass,
+        iconHtml: cardSensorPreviewHtml(b, helpers, time.value, time.unit),
+        labelHtml: hideLabel ? "" : cardBadgeLabelHtml(helpers, day + " " + month, DATE_TIME_CARD_METADATA.preview.dateBadge),
       };
     }
 
     return {
-      iconHtml:
-        '<span class="sp-sensor-preview' +
-          (helpers.cardSize === 4 && cardLargeNumbersEnabled(b) ? " sp-sensor-preview-large" : "") + '">' +
-          '<span class="sp-sensor-value">' + day + '</span>' +
-        '</span>',
-      labelHtml:
-        '<span class="sp-btn-label-row"><span class="sp-btn-label">' + helpers.escHtml(month) + '</span>' +
-        '<span class="sp-type-badge mdi mdi-calendar-month"></span></span>',
+      buttonClass: buttonClass,
+      iconHtml: cardSensorPreviewHtml(b, helpers, day, null),
+      labelHtml: hideLabel ? "" : cardBadgeLabelHtml(helpers, month, DATE_TIME_CARD_METADATA.preview.dateBadge),
     };
   },
 });

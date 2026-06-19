@@ -3,12 +3,12 @@
 // Internal implementation detail for button_grid.h. Include button_grid.h from device YAML.
 
 inline std::string media_status_text(const std::string &state) {
-  if (state == "playing") return "Playing";
-  if (state == "paused") return "Paused";
-  if (state == "idle") return "Idle";
-  if (state == "off") return "Off";
-  if (state == "unavailable") return "Unavailable";
-  if (state == "unknown" || state.empty()) return "Unknown";
+  if (state == "playing") return espcontrol_i18n(std::string("Playing"));
+  if (state == "paused") return espcontrol_i18n(std::string("Paused"));
+  if (state == "idle") return espcontrol_i18n(std::string("Idle"));
+  if (state == "off") return espcontrol_i18n(std::string("Off"));
+  if (state == "unavailable") return espcontrol_i18n(std::string("Unavailable"));
+  if (state == "unknown" || state.empty()) return espcontrol_i18n(std::string("Unknown"));
   return sentence_cap_text(state);
 }
 
@@ -19,6 +19,19 @@ inline void media_set_metadata_text(lv_obj_t *label, esphome::StringRef value,
   if (text.empty() || text == "unknown" || text == "unavailable")
     text = fallback ? fallback : "--";
   lv_label_set_text(label, text.c_str());
+}
+
+inline void media_refresh_artist_text(lv_obj_t *artist_lbl,
+                                      const std::string &entity_id) {
+  if (!artist_lbl || entity_id.empty()) return;
+  lv_label_set_text(artist_lbl, "");
+  ha_get_attribute(
+    entity_id, std::string("media_artist"),
+    std::function<void(esphome::StringRef)>(
+      [artist_lbl](esphome::StringRef artist) {
+        media_set_metadata_text(artist_lbl, artist, "");
+      })
+  );
 }
 
 inline bool media_seek_pending_active(SliderCtx *ctx) {
@@ -164,7 +177,7 @@ inline void setup_media_action_layout(lv_obj_t *btn, lv_obj_t *icon_lbl,
   }
   if (text_lbl) {
     std::string label = media_play_pause_show_state(p)
-      ? std::string("Paused")
+      ? espcontrol_i18n(std::string("Paused"))
       : media_action_label(p, mode);
     lv_label_set_text(text_lbl, label.c_str());
     lv_obj_align(text_lbl, LV_ALIGN_BOTTOM_LEFT, 0, 0);
@@ -183,10 +196,11 @@ inline void setup_media_now_playing_layout(lv_obj_t *btn, lv_obj_t *icon_lbl,
                                            lv_coord_t content_inset = 0,
                                            bool reset_text = true) {
   constexpr lv_coord_t TITLE_LINE_SPACE = -1;
+  lv_coord_t text_inset = content_inset > 0 ? content_inset : 0;
   lv_coord_t text_width = lv_pct(100);
-  if (btn && content_inset > 0) {
+  if (btn && text_inset > 0) {
     lv_obj_update_layout(btn);
-    lv_coord_t available_width = lv_obj_get_width(btn) - content_inset * 2;
+    lv_coord_t available_width = lv_obj_get_width(btn) - text_inset * 2;
     if (available_width > 1) text_width = available_width;
   }
   if (tappable) {
@@ -210,17 +224,17 @@ inline void setup_media_now_playing_layout(lv_obj_t *btn, lv_obj_t *icon_lbl,
       lv_label_set_long_mode(title_lbl, LV_LABEL_LONG_WRAP);
       lv_obj_set_width(title_lbl, text_width);
     }
-    lv_obj_align(title_lbl, LV_ALIGN_TOP_LEFT, content_inset, content_inset);
+    lv_obj_align(title_lbl, LV_ALIGN_TOP_LEFT, text_inset, text_inset);
     if (reset_text) lv_label_set_text(title_lbl, "--");
     lv_obj_move_foreground(title_lbl);
   }
   if (artist_lbl) {
     const lv_font_t *font = lv_obj_get_style_text_font(artist_lbl, LV_PART_MAIN);
-    if (reset_text) lv_label_set_text(artist_lbl, "--");
+    if (reset_text) lv_label_set_text(artist_lbl, "");
     lv_label_set_long_mode(artist_lbl, LV_LABEL_LONG_DOT);
     if (font && font->line_height > 0) lv_obj_set_size(artist_lbl, text_width, font->line_height);
     else lv_obj_set_width(artist_lbl, text_width);
-    lv_obj_align(artist_lbl, LV_ALIGN_BOTTOM_LEFT, content_inset, -content_inset);
+    lv_obj_align(artist_lbl, LV_ALIGN_BOTTOM_LEFT, text_inset, -text_inset);
     lv_obj_move_foreground(artist_lbl);
   }
 }
@@ -319,7 +333,7 @@ inline lv_obj_t *setup_media_slider_layout(lv_obj_t *btn, lv_obj_t *icon_lbl,
     }
     if (text_lbl) {
       lv_obj_clear_flag(text_lbl, LV_OBJ_FLAG_HIDDEN);
-      lv_label_set_text(text_lbl, media_position_show_state(p) ? "Paused" : media_action_label(p, mode).c_str());
+      lv_label_set_text(text_lbl, media_position_show_state(p) ? espcontrol_i18n("Paused") : media_action_label(p, mode).c_str());
       lv_obj_align(text_lbl, LV_ALIGN_BOTTOM_LEFT, pad, -pad);
       configure_button_label_wrap(text_lbl);
       lv_obj_move_foreground(text_lbl);
@@ -479,16 +493,16 @@ inline void setup_media_card(BtnSlot &s, const ParsedCfg &p, uint32_t on_color,
 inline void subscribe_media_state(lv_obj_t *btn_ptr,
                                   lv_obj_t *status_lbl,
                                   const std::string &entity_id) {
-  esphome::api::global_api_server->subscribe_home_assistant_state(
-    entity_id, {},
+  register_ha_control_availability(btn_ptr, btn_ptr);
+  ha_subscribe_state(
+    entity_id,
     std::function<void(esphome::StringRef)>(
       [btn_ptr, status_lbl](esphome::StringRef state) {
         std::string state_text = string_ref_limited(state, HA_SHORT_STATE_MAX_LEN);
         bool unavailable = ha_state_unavailable_ref(state);
         apply_control_availability(btn_ptr, btn_ptr, !unavailable);
         bool playing = state_text == "playing";
-        if (playing) lv_obj_add_state(btn_ptr, LV_STATE_CHECKED);
-        else lv_obj_clear_state(btn_ptr, LV_STATE_CHECKED);
+        set_card_checked_state(btn_ptr, playing);
         if (status_lbl) {
           std::string label = media_status_text(state_text);
           lv_label_set_text(status_lbl, label.c_str());
@@ -506,18 +520,19 @@ inline void subscribe_media_now_playing_state(MediaNowPlayingCtx *ctx,
   if (entity_id.empty()) return;
   lv_obj_t *title_lbl = ctx ? ctx->title_lbl : nullptr;
   lv_obj_t *artist_lbl = ctx ? ctx->artist_lbl : nullptr;
-  esphome::api::global_api_server->subscribe_home_assistant_state(
+  ha_subscribe_attribute(
     entity_id, std::string("media_title"),
     std::function<void(esphome::StringRef)>(
-      [title_lbl](esphome::StringRef title) {
+      [title_lbl, artist_lbl, entity_id](esphome::StringRef title) {
         media_set_metadata_text(title_lbl, title, "--");
+        media_refresh_artist_text(artist_lbl, entity_id);
       })
   );
-  esphome::api::global_api_server->subscribe_home_assistant_state(
+  ha_subscribe_attribute(
     entity_id, std::string("media_artist"),
     std::function<void(esphome::StringRef)>(
       [artist_lbl](esphome::StringRef artist) {
-        media_set_metadata_text(artist_lbl, artist, "--");
+        media_set_metadata_text(artist_lbl, artist, "");
       })
   );
   if (ctx && ctx->progress_slider) {
@@ -542,11 +557,12 @@ inline MediaVolumeCtx *create_media_volume_context(lv_obj_t *btn,
                                                    int width_compensation_percent = 100,
                                                    lv_obj_t *pct_lbl = nullptr,
                                                    lv_obj_t *unit_lbl = nullptr,
-                                                   std::function<void()> pause_home_idle = nullptr,
-                                                   std::function<void()> resume_home_idle = nullptr) {
+                                                   std::function<void()> suspend_display_takeover = nullptr,
+                                                   std::function<void()> resume_display_takeover = nullptr) {
   MediaVolumeCtx *ctx = new MediaVolumeCtx();
   ctx->entity_id = p.entity;
   ctx->label = media_label(p);
+  ctx->max_pct = media_volume_max_percent(p);
   ctx->accent_color = accent_color;
   ctx->secondary_color = secondary_color;
   ctx->tertiary_color = tertiary_color;
@@ -560,16 +576,17 @@ inline MediaVolumeCtx *create_media_volume_context(lv_obj_t *btn,
   ctx->unit_font = unit_font;
   ctx->label_font = label_font;
   ctx->icon_font = icon_font;
-  ctx->pause_home_idle = pause_home_idle;
-  ctx->resume_home_idle = resume_home_idle;
+  ctx->suspend_display_takeover = suspend_display_takeover;
+  ctx->resume_display_takeover = resume_display_takeover;
   if (btn) lv_obj_set_user_data(btn, ctx);
   return ctx;
 }
 
 inline void subscribe_media_volume_state(MediaVolumeCtx *ctx) {
   if (!ctx || ctx->entity_id.empty()) return;
-  esphome::api::global_api_server->subscribe_home_assistant_state(
-    ctx->entity_id, {},
+  register_ha_control_availability(ctx->btn, ctx->btn);
+  ha_subscribe_state(
+    ctx->entity_id,
     std::function<void(esphome::StringRef)>(
       [ctx](esphome::StringRef state) {
         ctx->available = !ha_state_unavailable_ref(state);
@@ -577,7 +594,7 @@ inline void subscribe_media_volume_state(MediaVolumeCtx *ctx) {
         if (!ctx->available) media_volume_hide_modal();
       })
   );
-  esphome::api::global_api_server->subscribe_home_assistant_state(
+  ha_subscribe_attribute(
     ctx->entity_id, std::string("volume_level"),
     std::function<void(esphome::StringRef)>(
       [ctx](esphome::StringRef val) {
@@ -607,9 +624,11 @@ inline void subscribe_media_slider_state(lv_obj_t *btn_ptr,
                                          const std::string &entity_id) {
   SliderCtx *ctx = (SliderCtx *)lv_obj_get_user_data(slider);
   if (!ctx) return;
+  register_ha_control_availability(
+    btn_ptr, ctx->interactive ? ctx->media_slider : nullptr, ctx->interactive);
 
-  esphome::api::global_api_server->subscribe_home_assistant_state(
-    entity_id, {},
+  ha_subscribe_state(
+    entity_id,
     std::function<void(esphome::StringRef)>(
       [btn_ptr, ctx](esphome::StringRef state) {
         std::string state_text = string_ref_limited(state, HA_SHORT_STATE_MAX_LEN);
@@ -632,7 +651,7 @@ inline void subscribe_media_slider_state(lv_obj_t *btn_ptr,
 
   if (!ctx->media_position) return;
 
-  esphome::api::global_api_server->subscribe_home_assistant_state(
+  ha_subscribe_attribute(
     entity_id, std::string("media_duration"),
     std::function<void(esphome::StringRef)>(
       [ctx](esphome::StringRef val) {
@@ -643,7 +662,7 @@ inline void subscribe_media_slider_state(lv_obj_t *btn_ptr,
       })
   );
 
-  esphome::api::global_api_server->subscribe_home_assistant_state(
+  ha_subscribe_attribute(
     entity_id, std::string("media_position"),
     std::function<void(esphome::StringRef)>(
       [ctx](esphome::StringRef val) {
@@ -666,7 +685,7 @@ inline void subscribe_media_slider_state(lv_obj_t *btn_ptr,
       })
   );
 
-  esphome::api::global_api_server->subscribe_home_assistant_state(
+  ha_subscribe_attribute(
     entity_id, std::string("media_position_updated_at"),
     std::function<void(esphome::StringRef)>(
       [ctx](esphome::StringRef val) {
