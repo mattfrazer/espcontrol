@@ -2335,7 +2335,7 @@ inline void media_volume_layout_modal(MediaVolumeCtx *ctx) {
   if (ui.mic_btn) {
     lv_obj_set_size(ui.mic_btn, layout.back_size, layout.back_size);
     lv_obj_set_style_radius(ui.mic_btn, layout.back_size / 2, LV_PART_MAIN);
-    lv_obj_align(ui.mic_btn, LV_ALIGN_BOTTOM_RIGHT, -layout.inset, -layout.inset);
+    lv_obj_align(ui.mic_btn, LV_ALIGN_TOP_RIGHT, -layout.inset, layout.back_inset_y);
   }
   lv_obj_set_style_translate_y(ui.pct_unit_lbl,
     control_modal_scaled_px(MEDIA_VOLUME_UNIT_Y_REF_PX, layout.short_side), LV_PART_MAIN);
